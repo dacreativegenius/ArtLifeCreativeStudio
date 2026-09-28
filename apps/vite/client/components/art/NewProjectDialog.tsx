@@ -58,7 +58,7 @@ export function NewProjectDialog({ studio }: {studio: Studio;}) {
           <input id="project-name" className="ds-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus data-oid="1cb0dac857" />
         </div>
 
-        <fieldset className="ds-radio-group mt-ds-lg" data-oid="7ac051ba97" data-oid-text-editable="false" data-oid-text-source="element:legend|expression:11d1c6f8ba79">
+        <fieldset className="ds-radio-group mt-ds-lg" data-oid="7ac051ba97" data-oid-text-editable="false" data-oid-text-source="element:legend|expression:77b9666577e5">
           <legend className="mb-ds-xs type-label text-foreground" data-oid="33a414f74a">Canvas</legend>
           {CANVAS_PRESETS.map((p, index) =>
           <label
