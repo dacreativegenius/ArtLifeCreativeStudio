@@ -1,0 +1,9 @@
+{
+  "name": "@vibe/config",
+  "version": "0.0.1",
+  "private": true,
+  "exports": {
+    "./tsconfig": "./tsconfig.base.json",
+    "./tsconfig/react": "./tsconfig.react.json"
+  }
+}

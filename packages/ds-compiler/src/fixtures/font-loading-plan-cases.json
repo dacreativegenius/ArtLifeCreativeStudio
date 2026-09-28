@@ -1,0 +1,73 @@
+{
+  "cases": [
+    {
+      "name": "normal-only families in canonical order",
+      "families": [
+        {
+          "cssFamilyName": "Inter",
+          "faces": [
+            { "weight": 400, "style": "normal" },
+            { "weight": 500, "style": "normal" }
+          ]
+        },
+        {
+          "cssFamilyName": "Space Grotesk",
+          "faces": [{ "weight": 600, "style": "normal" }]
+        }
+      ],
+      "expectedHref": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Space+Grotesk:wght@600&display=swap"
+    },
+    {
+      "name": "mixed normal and italic axes",
+      "families": [
+        {
+          "cssFamilyName": "Cardo",
+          "faces": [
+            { "weight": 400, "style": "normal" },
+            { "weight": 700, "style": "normal" },
+            { "weight": 400, "style": "italic" }
+          ]
+        }
+      ],
+      "expectedHref": "https://fonts.googleapis.com/css2?family=Cardo:ital,wght@0,400;0,700;1,400&display=swap"
+    },
+    {
+      "name": "family escaping",
+      "families": [
+        {
+          "cssFamilyName": "Noto Sans & Symbols",
+          "faces": [{ "weight": 400, "style": "normal" }]
+        }
+      ],
+      "expectedHref": "https://fonts.googleapis.com/css2?family=Noto+Sans+%26+Symbols:wght@400&display=swap"
+    },
+    {
+      "name": "NFC-normalized family names",
+      "families": [
+        {
+          "cssFamilyName": "Café Sans",
+          "faces": [{ "weight": 400, "style": "normal" }]
+        }
+      ],
+      "expectedHref": "https://fonts.googleapis.com/css2?family=Caf%C3%A9+Sans:wght@400&display=swap"
+    },
+    {
+      "name": "multiple canonical family rows",
+      "families": [
+        {
+          "cssFamilyName": "Alpha Serif",
+          "faces": [{ "weight": 400, "style": "normal" }]
+        },
+        {
+          "cssFamilyName": "Zulu Sans",
+          "faces": [{ "weight": 700, "style": "normal" }]
+        }
+      ],
+      "expectedHref": "https://fonts.googleapis.com/css2?family=Alpha+Serif:wght@400&family=Zulu+Sans:wght@700&display=swap"
+    }
+  ],
+  "requestLimit": {
+    "familyCount": 80,
+    "familyNamePrefix": "Deliberately Long Family Name Number "
+  }
+}
