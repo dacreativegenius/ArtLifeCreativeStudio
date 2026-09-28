@@ -10,6 +10,8 @@ import {
   Move,
   PaintBucket,
   Pipette,
+  RotateCw,
+  SquareDashed,
   Slash,
   Square,
   ZoomIn,
@@ -22,6 +24,7 @@ const TOOLS: {id: ToolId;label: string;key: string;icon: LucideIcon;group: numbe
 { id: "select", label: "Selection", key: "V", icon: MousePointer2, group: 0 },
 { id: "direct", label: "Direct Selection", key: "A", icon: MousePointer, group: 0 },
 { id: "move", label: "Move", key: "M", icon: Move, group: 0 },
+{ id: "transform", label: "Transform · scale + rotate", key: "T", icon: RotateCw, group: 0 },
 { id: "lasso", label: "Freeform Select", key: "Q", icon: Lasso, group: 0 },
 { id: "brush", label: "Brush", key: "B", icon: Brush, group: 1 },
 { id: "eraser", label: "Eraser", key: "E", icon: Eraser, group: 1 },
@@ -36,7 +39,7 @@ const TOOLS: {id: ToolId;label: string;key: string;icon: LucideIcon;group: numbe
 
 export function Toolbar({ studio }: {studio: Studio;}) {
   return (
-    <nav aria-label="Tools" className="relative z-20 flex w-14 shrink-0 flex-col items-center gap-ds-xs border-r border-border bg-card py-ds-sm" data-oid="2686ed8674" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-text-editable="false" data-oid-text-source="expression:37d84f586184|element:div">
+    <nav aria-label="Tools" className="relative z-20 flex w-14 shrink-0 flex-col items-center gap-ds-xs border-r border-border bg-card py-ds-sm" data-oid="2686ed8674" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-text-editable="false" data-oid-text-source="expression:03949e318273|element:div|element:div">
       {TOOLS.map((t, index) => {
         const Icon = t.icon;
         const newGroup = index > 0 && TOOLS[index - 1].group !== t.group;
@@ -60,6 +63,22 @@ export function Toolbar({ studio }: {studio: Studio;}) {
           </div>);
 
       })}
+
+      <div className="mt-ds-xs flex flex-col items-center border-t border-border pt-ds-sm" data-oid="d3d6f14530">
+        <div className="group relative" data-oid="396194f7f6">
+          <button
+            type="button"
+            aria-label="Deselect (Ctrl+D)"
+            disabled={!studio.selection.length}
+            onClick={studio.deselect}
+            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-accent disabled:opacity-35" data-oid="26465a2c45">
+            <SquareDashed className="h-[18px] w-[18px]" strokeWidth={1.75} data-oid="8e95eb8e06" />
+          </button>
+          <span className="pointer-events-none absolute left-full top-1/2 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="99ff1616a1">
+            Deselect <kbd className="ml-ds-xs type-caption text-primary" data-oid="1dad661d87">Ctrl D</kbd>
+          </span>
+        </div>
+      </div>
 
       <div className="mt-auto flex flex-col items-center gap-ds-sm pb-ds-xs" data-oid="93f87d87c4">
         <div className="relative h-11 w-11" data-oid="500812a644">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { BRUSHES, DOC_H, DOC_W, uid, type BrushId, type BrushSettings, type Layer, type ToolId } from "../../lib/art/types"
+import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Layer, type ToolId } from "../../lib/art/types"
 import { renderDoc, translateItem } from "../../lib/art/render"
+import { buildSVG, downloadBlob, parseDTM, safeName, serializeDTM } from "../../lib/art/fileio"
 
 export interface View {
   x: number
@@ -48,6 +49,10 @@ export function useStudio() {
   const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 })
   const [fitNonce, setFitNonce] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
+  const [docSize, setDocSizeState] = useState({ w: DOC_W, h: DOC_H })
+  const [docName, setDocName] = useState("Untitled")
+  const [newDialogOpen, setNewDialogOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [, setHist] = useState(0)
 
   const viewportRef = useRef({ w: 1200, h: 800 })
@@ -169,11 +174,78 @@ export function useStudio() {
     commit((prev) => prev.map((l) => ({ ...l, items: l.items.map((i) => (ids.has(i.id) ? translateItem(i, dx, dy) : i)) })))
   }
 
-  const newDocument = () => {
-    commit(() => [makeLayer("Sketch", uid("L")), makeLayer("Ink", "layer-ink-" + uid())])
+  const applyDocSize = (w: number, h: number) => {
+    setDocSize(w, h)
+    setDocSizeState({ w: DOC_W, h: DOC_H })
+  }
+
+  const resetHistory = () => {
+    past.current = []
+    future.current = []
+    setHist((h) => h + 1)
+  }
+
+  const newDocument = (w: number, h: number, name = "Untitled") => {
+    applyDocSize(w, h)
+    const ink = makeLayer("Ink")
+    setLayers([makeLayer("Sketch"), ink])
+    setActiveLayerId(ink.id)
+    layerCount.current = 3
     setSelection([])
-    setTimeout(() => setActiveLayerId(layersRef.current[layersRef.current.length - 1].id), 0)
+    setDocName(name)
+    resetHistory()
+    setNewDialogOpen(false)
     setFitNonce((n) => n + 1)
+    flash(`New canvas · ${DOC_W} × ${DOC_H} px`)
+  }
+
+  const deselect = () => {
+    if (selection.length) flash("Deselected")
+    setSelection([])
+  }
+
+  const exportSVG = () => {
+    const svg = buildSVG(layersRef.current, DOC_W, DOC_H)
+    downloadBlob(new Blob([svg], { type: "image/svg+xml" }), `${safeName(docName)}-${DOC_W}x${DOC_H}.svg`)
+    flash("Exported SVG")
+  }
+
+  const saveDTM = () => {
+    const json = serializeDTM({
+      name: docName,
+      width: DOC_W,
+      height: DOC_H,
+      layers: layersRef.current,
+      activeLayerId,
+      primary,
+      secondary,
+      swatches,
+    })
+    downloadBlob(new Blob([json], { type: "application/x-art-life-dtm+json" }), `${safeName(docName)}.dtm`)
+    flash(`Saved ${safeName(docName)}.dtm`)
+  }
+
+  const openFile = () => fileInputRef.current?.click()
+
+  const loadDTM = async (file: File) => {
+    if (!/\.dtm$/i.test(file.name)) return flash("Choose an Art Life .dtm file")
+    try {
+      const doc = await parseDTM(await file.text())
+      applyDocSize(doc.width, doc.height)
+      setLayers(doc.layers)
+      setActiveLayerId(doc.activeLayerId)
+      layerCount.current = doc.layers.length + 1
+      if (doc.primary) setPrimary(doc.primary)
+      if (doc.secondary) setSecondary(doc.secondary)
+      if (doc.swatches) setSwatches(doc.swatches)
+      setSelection([])
+      setDocName(file.name.replace(/\.dtm$/i, "") || doc.name)
+      resetHistory()
+      setFitNonce((n) => n + 1)
+      flash(`Opened ${file.name} · ${doc.width} × ${doc.height} px`)
+    } catch (err) {
+      flash(err instanceof Error ? err.message : "Could not open file")
+    }
   }
 
   const zoomBy = (f: number) => {
@@ -194,7 +266,7 @@ export function useStudio() {
       if (!b) return
       const a = document.createElement("a")
       a.href = URL.createObjectURL(b)
-      a.download = `art-life-${DOC_W}x${DOC_H}.png`
+      a.download = `${safeName(docName)}-${DOC_W}x${DOC_H}.png`
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 1000)
     })
@@ -270,7 +342,18 @@ export function useStudio() {
     updateLayer,
     clearLayer,
     newDocument,
+    newDialogOpen,
+    setNewDialogOpen,
+    docSize,
+    docName,
+    setDocName,
+    deselect,
     exportPNG,
+    exportSVG,
+    saveDTM,
+    openFile,
+    loadDTM,
+    fileInputRef,
     message,
     flash,
   }
@@ -280,7 +363,7 @@ export function useStudio() {
 
   useEffect(() => {
     const TOOL_KEYS: Record<string, ToolId> = {
-      v: "select", a: "direct", m: "move", q: "lasso", b: "brush", e: "eraser", g: "fill",
+      v: "select", a: "direct", m: "move", t: "transform", q: "lasso", b: "brush", e: "eraser", g: "fill",
       i: "eyedropper", l: "line", u: "rect", o: "ellipse", h: "hand", z: "zoom",
     }
     const onKey = (e: KeyboardEvent) => {
@@ -307,7 +390,23 @@ export function useStudio() {
       }
       if (mod && k === "s") {
         e.preventDefault()
-        s.exportPNG()
+        if (e.shiftKey) s.exportSVG()
+        else s.saveDTM()
+        return
+      }
+      if (mod && k === "o") {
+        e.preventDefault()
+        s.openFile()
+        return
+      }
+      if (mod && k === "d") {
+        e.preventDefault()
+        s.deselect()
+        return
+      }
+      if (mod && e.altKey && k === "n") {
+        e.preventDefault()
+        s.setNewDialogOpen(true)
         return
       }
       if (mod && k === "0") {

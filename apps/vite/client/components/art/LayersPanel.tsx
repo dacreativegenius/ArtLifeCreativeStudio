@@ -72,6 +72,35 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
         </div>
       }
 
+      {active &&
+      <div className="mb-ds-sm flex items-center gap-ds-sm" data-oid="f30b5d36ef">
+          <p className="w-[46px] text-label text-muted-foreground" data-oid="d131471244">Blend</p>
+          <div role="group" aria-label="Layer blend mode" className="grid flex-1 grid-cols-3 gap-[2px] rounded-md border border-border bg-background p-[2px]" data-oid="facf864f8b">
+            <button
+            type="button"
+            aria-pressed={(active.blend ?? "normal") === "normal"}
+            onClick={() => studio.updateLayer(active.id, { blend: "normal" })}
+            className="h-6 rounded-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-foreground" data-oid="b782e1eb99">
+              Normal
+            </button>
+            <button
+            type="button"
+            aria-pressed={active.blend === "multiply"}
+            onClick={() => studio.updateLayer(active.id, { blend: "multiply" })}
+            className="h-6 rounded-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground" data-oid="d8c3435653">
+              Multiply
+            </button>
+            <button
+            type="button"
+            aria-pressed={active.blend === "screen"}
+            onClick={() => studio.updateLayer(active.id, { blend: "screen" })}
+            className="h-6 rounded-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground" data-oid="9f101a44b3">
+              Screen
+            </button>
+          </div>
+        </div>
+      }
+
       <ul role="listbox" aria-label="Layers" className="flex flex-col gap-[3px] rounded-md border border-border bg-background p-ds-xs" data-oid="0a9070211d">
         {ordered.map((layer, index) =>
         <li
@@ -80,7 +109,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
           aria-selected={layer.id === active?.id}
           data-hidden={!layer.visible}
           onClick={() => studio.setActiveLayerId(layer.id)}
-          className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50" data-oid="d131471244" data-oid-shared="true" data-oid-instance-targetable="true">
+          className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-instance-targetable="true">
           
             <button
             type="button"
@@ -116,8 +145,8 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
                   {layer.name}
                 </p>
             }
-              <p className="type-caption text-muted-foreground" data-oid="58f576afbc" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:5b9c7a56383a|text|expression:4900173db67f|text">
-                {layer.items.length} OBJ · {Math.round(layer.opacity * 100)}%
+              <p className="type-caption text-muted-foreground" data-oid="58f576afbc" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:5b9c7a56383a|text|expression:4900173db67f|text|expression:f3269a005485">
+                {layer.items.length} OBJ · {Math.round(layer.opacity * 100)}%{layer.blend === "multiply" ? " · MULT" : layer.blend === "screen" ? " · SCRN" : ""}
               </p>
             </div>
             <button

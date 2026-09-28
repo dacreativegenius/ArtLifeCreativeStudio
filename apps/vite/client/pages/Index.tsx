@@ -6,6 +6,7 @@ import { ColorPanel } from "../components/art/ColorPanel";
 import { SwatchesPanel } from "../components/art/SwatchesPanel";
 import { BrushPanel } from "../components/art/BrushPanel";
 import { LayersPanel } from "../components/art/LayersPanel";
+import { NewProjectDialog } from "../components/art/NewProjectDialog";
 
 export default function Index() {
   const studio = useStudio();
@@ -22,6 +23,7 @@ export default function Index() {
           <LayersPanel studio={studio} />
         </aside>
       </div>
+      <NewProjectDialog studio={studio} />
     </main>);
 
 }

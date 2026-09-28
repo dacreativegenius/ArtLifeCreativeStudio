@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Studio } from "./useStudio";
-import { DOC_H, DOC_W, uid, type Item, type Layer, type Pt, type ShapeItem } from "../../lib/art/types";
+import { DOC_H, DOC_W, blendOp, uid, type Item, type Rect, type Layer, type Pt, type ShapeItem } from "../../lib/art/types";
 import {
   anchorsOf,
   drawItem,
@@ -12,6 +12,8 @@ import {
   pointInPoly,
   rectsIntersect,
   renderDoc,
+  rotateItem,
+  rotPt,
   scaleItem,
   setAnchor,
   simplify,
@@ -29,7 +31,10 @@ type Drag =
 {type: "lasso";pts: XY[];additive: boolean;base: string[];} |
 {type: "move";lx: number;ly: number;ids: Set<string>;moved: boolean;} |
 {type: "scale";ax: number;ay: number;hx: number;hy: number;orig: Map<string, Item>;moved: boolean;} |
-{type: "anchor";id: string;idx: number;orig: Item;moved: boolean;};
+{type: "anchor";id: string;idx: number;orig: Item;moved: boolean;} |
+{type: "rotate";cx: number;cy: number;a0: number;angle: number;box: Rect;orig: Map<string, Item>;moved: boolean;};
+
+const ROT_OFFSET = 28;
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -265,7 +270,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       l.restore();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = layer.opacity;
+      ctx.globalCompositeOperation = blendOp(layer.blend);
       ctx.drawImage(lc, 0, 0);
+      ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
     }
 
@@ -302,7 +309,74 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         }
       }
       const u = unionBounds(sel);
-      if (u && (st.tool === "select" || st.tool === "move")) {
+      const dr = drag.current;
+      if (st.tool === "transform" && dr?.type === "rotate") {
+        const b = dr.box;
+        const corners = [
+        [b.x, b.y],
+        [b.x + b.w, b.y],
+        [b.x + b.w, b.y + b.h],
+        [b.x, b.y + b.h]].
+        map(([x, y]) => rotPt(x, y, dr.cx, dr.cy, dr.angle));
+        ctx.beginPath();
+        corners.forEach((p, i) => i ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y)));
+        ctx.closePath();
+        ctx.stroke();
+        const top = rotPt(b.x + b.w / 2, b.y, dr.cx, dr.cy, dr.angle);
+        const ux = Math.sin(dr.angle);
+        const uy = -Math.cos(dr.angle);
+        const hx = X(top.x) + ux * ROT_OFFSET;
+        const hy = Y(top.y) + uy * ROT_OFFSET;
+        ctx.beginPath();
+        ctx.moveTo(X(top.x), Y(top.y));
+        ctx.lineTo(hx, hy);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(hx, hy, 5.5, 0, Math.PI * 2);
+        ctx.fillStyle = acc;
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(X(dr.cx), Y(dr.cy), 3, 0, Math.PI * 2);
+        ctx.stroke();
+        let deg = Math.round(dr.angle * 180 / Math.PI) % 360;
+        if (deg > 180) deg -= 360;
+        if (deg < -180) deg += 360;
+        const label = `${deg}°`;
+        ctx.font = "11px 'JetBrains Mono', monospace";
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = acc;
+        ctx.fillRect(hx + 10, hy - 9, tw + 10, 18);
+        ctx.fillStyle = "#0f0f12";
+        ctx.fillText(label, hx + 15, hy + 4);
+      } else if (u && st.tool === "transform") {
+        ctx.strokeRect(Math.round(X(u.x)) + 0.5, Math.round(Y(u.y)) + 0.5, u.w * zoom, u.h * zoom);
+        const tx = X(u.x + u.w / 2);
+        const ty = Y(u.y);
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx, ty - ROT_OFFSET);
+        ctx.stroke();
+        for (const [hx, hy] of [
+        [u.x, u.y],
+        [u.x + u.w, u.y],
+        [u.x + u.w, u.y + u.h],
+        [u.x, u.y + u.h]])
+        {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(X(hx) - 4, Y(hy) - 4, 8, 8);
+          ctx.strokeRect(X(hx) - 4, Y(hy) - 4, 8, 8);
+        }
+        ctx.beginPath();
+        ctx.arc(tx, ty - ROT_OFFSET, 5.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(tx, ty - ROT_OFFSET, 2, 0, Math.PI * 2);
+        ctx.fillStyle = acc;
+        ctx.fill();
+      } else if (u && (st.tool === "select" || st.tool === "move")) {
         ctx.strokeRect(Math.round(X(u.x)) + 0.5, Math.round(Y(u.y)) + 0.5, u.w * zoom, u.h * zoom);
         if (st.tool === "select") {
           for (const [hx, hy] of [
@@ -413,6 +487,16 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         return { hx: cx, hy: cy, ax, ay };
       }
     }
+    return null;
+  };
+
+  const rotHit = (sx: number, sy: number) => {
+    const u = unionBounds(selectedItems());
+    if (!u) return null;
+    const { x: px, y: py, zoom } = S.current.view;
+    const hx = px + (u.x + u.w / 2) * zoom;
+    const hy = py + u.y * zoom - ROT_OFFSET;
+    if (Math.hypot(hx - sx, hy - sy) <= 9) return u;
     return null;
   };
 
@@ -537,6 +621,40 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           }
           break;
         }
+      case "transform":{
+          const rb = st.selection.length ? rotHit(sx, sy) : null;
+          if (rb) {
+            const orig = new Map<string, Item>();
+            for (const it of selectedItems()) orig.set(it.id, it);
+            const cx = rb.x + rb.w / 2;
+            const cy = rb.y + rb.h / 2;
+            drag.current = { type: "rotate", cx, cy, a0: Math.atan2(y - cy, x - cx), angle: 0, box: rb, orig, moved: false };
+            break;
+          }
+          const h = st.selection.length ? handleHit(sx, sy) : null;
+          if (h) {
+            const orig = new Map<string, Item>();
+            for (const it of selectedItems()) orig.set(it.id, it);
+            drag.current = { type: "scale", ...h, orig, moved: false };
+            break;
+          }
+          const u = unionBounds(selectedItems());
+          if (u && !e.shiftKey && x >= u.x && x <= u.x + u.w && y >= u.y && y <= u.y + u.h) {
+            drag.current = { type: "move", lx: x, ly: y, ids: new Set(st.selection), moved: false };
+            break;
+          }
+          const hit = hitTop(st.layers, x, y, tol);
+          if (hit) {
+            let sel = st.selection;
+            const id = hit.item.id;
+            if (e.shiftKey) sel = sel.includes(id) ? sel.filter((i) => i !== id) : [...sel, id];else
+            if (!sel.includes(id)) sel = [id];
+            st.setSelection(sel);
+            st.setActiveLayerId(hit.layerId);
+            if (sel.includes(id)) drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false };
+          } else startMarquee();
+          break;
+        }
       case "select":{
           const h = st.selection.length ? handleHit(sx, sy) : null;
           if (h) {
@@ -650,6 +768,19 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             st.setLayers((ls) => replaceItems(ls, map));
             break;
           }
+        case "rotate":{
+            if (!d.moved) {
+              st.snapshot();
+              d.moved = true;
+            }
+            let a = Math.atan2(y - d.cy, x - d.cx) - d.a0;
+            if (e.shiftKey) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12);
+            d.angle = a;
+            const map = new Map<string, Item>();
+            d.orig.forEach((it, id) => map.set(id, rotateItem(it, d.cx, d.cy, a)));
+            st.setLayers((ls) => replaceItems(ls, map));
+            break;
+          }
         case "anchor":{
             if (!d.moved) {
               st.snapshot();
@@ -721,7 +852,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   "none" :
   tool === "move" ?
   "move" :
-  tool === "select" || tool === "direct" ?
+  tool === "select" || tool === "direct" || tool === "transform" ?
   "default" :
   "crosshair";
 
@@ -771,8 +902,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           </span>
           <output className="w-8 text-foreground" data-oid="21dc520657">{readout.p.toFixed(2)}</output>
         </span>
-        <span className="ml-auto" data-oid="c7e476513e" data-oid-text-editable="false" data-oid-text-source="expression:0293cd9deb92|text|expression:0c22207fd581|text">
-          {DOC_W} × {DOC_H} px
+        <span className="ml-auto" data-oid="c7e476513e" data-oid-text-editable="false" data-oid-text-source="expression:84185c51aefc|text|expression:4a498f96c710|text">
+          {studio.docSize.w} × {studio.docSize.h} px
         </span>
         <span data-oid="31b74773bc">
           LAYER <output className="text-foreground" data-oid="0c877c525d">{studio.activeLayer?.name}</output>

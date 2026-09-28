@@ -1,6 +1,7 @@
 import {
   DOC_H,
   DOC_W,
+  blendOp,
   type BrushId,
   type EraseItem,
   type Item,
@@ -118,6 +119,33 @@ function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem) {
 }
 
 /* ---------------- Vector ---------------- */
+
+/** Outline geometry of a pressure vector stroke (shared by canvas + SVG export). */
+export function pressureGeometry(s: StrokeItem) {
+  const pts = catmull(s.points)
+  const n = pts.length
+  if (!n) return null
+  const { lens, total } = cumulative(pts)
+  if (n === 1 || total < 0.5) {
+    return { dot: { x: pts[0].x, y: pts[0].y, r: Math.max(0.5, (s.size * (0.1 + 0.9 * pts[0].p)) / 2) }, left: [] as XY[], right: [] as XY[], pts, widths: [] as number[] }
+  }
+  const tLen = Math.min(total * 0.25, s.size * 3)
+  const widths = pts.map((p, i) => (s.size * (0.1 + 0.9 * p.p) * Math.max(0.06, taperAt(lens[i], total, tLen))) / 2)
+  const left: XY[] = []
+  const right: XY[] = []
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)]
+    const b = pts[Math.min(n - 1, i + 1)]
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const l = Math.hypot(dx, dy) || 1
+    const nx = -dy / l
+    const ny = dx / l
+    left.push({ x: pts[i].x + nx * widths[i], y: pts[i].y + ny * widths[i] })
+    right.push({ x: pts[i].x - nx * widths[i], y: pts[i].y - ny * widths[i] })
+  }
+  return { dot: null, left, right, pts, widths }
+}
 
 function drawVectorPressure(ctx: CanvasRenderingContext2D, s: StrokeItem) {
   const pts = catmull(s.points)
@@ -274,7 +302,11 @@ export function drawItem(ctx: CanvasRenderingContext2D, it: Item) {
       drawErase(ctx, it)
       break
     case "image":
-      ctx.drawImage(it.canvas, it.x, it.y, it.w, it.h)
+      if (it.rot) {
+        ctx.translate(it.x + it.w / 2, it.y + it.h / 2)
+        ctx.rotate(it.rot)
+        ctx.drawImage(it.canvas, -it.w / 2, -it.h / 2, it.w, it.h)
+      } else ctx.drawImage(it.canvas, it.x, it.y, it.w, it.h)
       break
   }
   ctx.restore()
@@ -291,21 +323,37 @@ export function outlineOf(it: Item): { pts: XY[]; closed: boolean } {
     case "shape":
       if (it.shape === "ellipse") return { pts: ellipseSamples(it.points), closed: true }
       return { pts: it.points, closed: it.shape === "rect" }
-    case "image":
-      return {
-        pts: [
-          { x: it.x, y: it.y },
-          { x: it.x + it.w, y: it.y },
-          { x: it.x + it.w, y: it.y + it.h },
-          { x: it.x, y: it.y + it.h },
-        ],
-        closed: true,
-      }
+    case "image": {
+      const corners = [
+        { x: it.x, y: it.y },
+        { x: it.x + it.w, y: it.y },
+        { x: it.x + it.w, y: it.y + it.h },
+        { x: it.x, y: it.y + it.h },
+      ]
+      if (!it.rot) return { pts: corners, closed: true }
+      const cx = it.x + it.w / 2
+      const cy = it.y + it.h / 2
+      return { pts: corners.map((p) => rotPt(p.x, p.y, cx, cy, it.rot!)), closed: true }
+    }
   }
 }
 
+export function rotPt(x: number, y: number, cx: number, cy: number, a: number): XY {
+  const c = Math.cos(a)
+  const s = Math.sin(a)
+  return { x: cx + (x - cx) * c - (y - cy) * s, y: cy + (x - cx) * s + (y - cy) * c }
+}
+
+export function rotateItem(it: Item, cx: number, cy: number, a: number): Item {
+  if (it.kind === "image") {
+    const c = rotPt(it.x + it.w / 2, it.y + it.h / 2, cx, cy, a)
+    return { ...it, x: c.x - it.w / 2, y: c.y - it.h / 2, rot: (it.rot ?? 0) + a }
+  }
+  return { ...it, points: it.points.map((p) => ({ ...p, ...rotPt(p.x, p.y, cx, cy, a) })) } as Item
+}
+
 export function itemBounds(it: Item): Rect {
-  if (it.kind === "image") return { x: it.x, y: it.y, w: it.w, h: it.h }
+  if (it.kind === "image" && !it.rot) return { x: it.x, y: it.y, w: it.w, h: it.h }
   const { pts } = outlineOf(it)
   let minX = Infinity
   let minY = Infinity
@@ -317,7 +365,7 @@ export function itemBounds(it: Item): Rect {
     if (p.x > maxX) maxX = p.x
     if (p.y > maxY) maxY = p.y
   }
-  const pad = it.size / 2
+  const pad = it.kind === "image" ? 0 : it.size / 2
   return { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 }
 }
 
@@ -362,6 +410,11 @@ export function pointInPoly(x: number, y: number, poly: XY[]) {
 export function hitItem(it: Item, x: number, y: number, tol: number): boolean {
   if (it.kind === "erase") return false
   if (it.kind === "image") {
+    if (it.rot) {
+      const q = rotPt(x, y, it.x + it.w / 2, it.y + it.h / 2, -it.rot)
+      x = q.x
+      y = q.y
+    }
     if (x < it.x || y < it.y || x > it.x + it.w || y > it.y + it.h) return false
     const cx = Math.floor(((x - it.x) / it.w) * it.canvas.width)
     const cy = Math.floor(((y - it.y) / it.h) * it.canvas.height)
@@ -405,6 +458,13 @@ export function translateItem(it: Item, dx: number, dy: number): Item {
 }
 
 export function scaleItem(it: Item, ox: number, oy: number, sx: number, sy: number): Item {
+  if (it.kind === "image" && it.rot) {
+    const cx = ox + (it.x + it.w / 2 - ox) * sx
+    const cy = oy + (it.y + it.h / 2 - oy) * sy
+    const w = it.w * Math.abs(sx)
+    const h = it.h * Math.abs(sy)
+    return { ...it, x: cx - w / 2, y: cy - h / 2, w, h }
+  }
   if (it.kind === "image") {
     let x = ox + (it.x - ox) * sx
     let y = oy + (it.y - oy) * sy
@@ -475,7 +535,9 @@ export function renderDoc(layers: Layer[], scale = 1, paper = true) {
     t.setTransform(scale, 0, 0, scale, 0, 0)
     for (const it of l.items) drawItem(t, it)
     ctx.globalAlpha = l.opacity
+    ctx.globalCompositeOperation = blendOp(l.blend)
     ctx.drawImage(tmp, 0, 0)
+    ctx.globalCompositeOperation = "source-over"
     ctx.globalAlpha = 1
   }
   return c
