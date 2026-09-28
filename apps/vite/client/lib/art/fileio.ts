@@ -13,6 +13,63 @@ export function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1500)
 }
 
+export type SaveResult = "saved" | "shared" | "downloaded" | "cancelled"
+
+interface SaveOpts {
+  filename: string
+  description: string
+  mime: string
+  ext: string
+  /** MIME used when handing the file to the OS share sheet (Android / iOS “Save to Files”). */
+  shareMime?: string
+}
+
+const isMobile = () =>
+  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
+
+/**
+ * Save to the user's file system:
+ * - Chrome / Edge desktop (macOS Finder, Windows File Explorer): native “Save As” dialog via the File System Access API.
+ * - Android / iOS: the system share sheet, which offers “Save to Files” / Drive / Downloads.
+ * - Everything else (Safari, Firefox, sandboxed iframes): a regular download to the Downloads folder.
+ * The picker is opened BEFORE the file is generated so the click still counts as a user gesture.
+ */
+export async function saveFile(make: () => Blob | Promise<Blob>, o: SaveOpts): Promise<SaveResult> {
+  const w = window as unknown as {
+    showSaveFilePicker?: (opts: unknown) => Promise<{ createWritable: () => Promise<{ write: (b: Blob) => Promise<void>; close: () => Promise<void> }> }>
+  }
+  if (typeof w.showSaveFilePicker === "function" && !isMobile()) {
+    try {
+      const handle = await w.showSaveFilePicker({
+        suggestedName: o.filename,
+        types: [{ description: o.description, accept: { [o.mime]: [o.ext] } }],
+      })
+      const blob = await make()
+      const ws = await handle.createWritable()
+      await ws.write(blob)
+      await ws.close()
+      return "saved"
+    } catch (err) {
+      if ((err as DOMException)?.name === "AbortError") return "cancelled"
+      // SecurityError (e.g. inside a cross-origin preview iframe) → fall through to download
+    }
+  }
+  const blob = await make()
+  if (isMobile() && typeof navigator.canShare === "function") {
+    const file = new File([blob], o.filename, { type: o.shareMime ?? o.mime })
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: o.filename })
+        return "shared"
+      } catch (err) {
+        if ((err as DOMException)?.name === "AbortError") return "cancelled"
+      }
+    }
+  }
+  downloadBlob(blob, o.filename)
+  return "downloaded"
+}
+
 export const safeName = (name: string) => name.trim().replace(/[^\w\- ]+/g, "").replace(/\s+/g, "-") || "untitled"
 
 /* ---------------- SVG export ---------------- */

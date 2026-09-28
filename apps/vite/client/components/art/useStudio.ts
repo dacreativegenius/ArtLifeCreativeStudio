@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Layer, type ToolId } from "../../lib/art/types"
 import { renderDoc, translateItem } from "../../lib/art/render"
-import { buildSVG, downloadBlob, parseDTM, safeName, serializeDTM } from "../../lib/art/fileio"
+import { buildSVG, parseDTM, safeName, saveFile, serializeDTM, type SaveResult } from "../../lib/art/fileio"
 
 export interface View {
   x: number
@@ -204,25 +204,45 @@ export function useStudio() {
     setSelection([])
   }
 
-  const exportSVG = () => {
-    const svg = buildSVG(layersRef.current, DOC_W, DOC_H)
-    downloadBlob(new Blob([svg], { type: "image/svg+xml" }), `${safeName(docName)}-${DOC_W}x${DOC_H}.svg`)
-    flash("Exported SVG")
+  const report = (res: SaveResult, filename: string) => {
+    if (res === "saved") flash(`Saved ${filename}`)
+    else if (res === "shared") flash(`Sent ${filename} to Files`)
+    else if (res === "downloaded") flash(`${filename} saved to Downloads`)
   }
 
-  const saveDTM = () => {
-    const json = serializeDTM({
-      name: docName,
-      width: DOC_W,
-      height: DOC_H,
-      layers: layersRef.current,
-      activeLayerId,
-      primary,
-      secondary,
-      swatches,
+  const exportSVG = async () => {
+    const filename = `${safeName(docName)}-${DOC_W}x${DOC_H}.svg`
+    const res = await saveFile(() => new Blob([buildSVG(layersRef.current, DOC_W, DOC_H)], { type: "image/svg+xml" }), {
+      filename,
+      description: "SVG vector image",
+      mime: "image/svg+xml",
+      ext: ".svg",
     })
-    downloadBlob(new Blob([json], { type: "application/x-art-life-dtm+json" }), `${safeName(docName)}.dtm`)
-    flash(`Saved ${safeName(docName)}.dtm`)
+    report(res, filename)
+  }
+
+  const saveDTM = async () => {
+    const filename = `${safeName(docName)}.dtm`
+    const res = await saveFile(
+      () =>
+        new Blob(
+          [
+            serializeDTM({
+              name: docName,
+              width: DOC_W,
+              height: DOC_H,
+              layers: layersRef.current,
+              activeLayerId,
+              primary,
+              secondary,
+              swatches,
+            }),
+          ],
+          { type: "application/octet-stream" },
+        ),
+      { filename, description: "Art Life project", mime: "application/octet-stream", ext: ".dtm", shareMime: "text/plain" },
+    )
+    report(res, filename)
   }
 
   const openFile = () => fileInputRef.current?.click()
@@ -260,17 +280,16 @@ export function useStudio() {
 
   const requestFit = () => setFitNonce((n) => n + 1)
 
-  const exportPNG = () => {
-    const c = renderDoc(layersRef.current, 1, true)
-    c.toBlob((b) => {
-      if (!b) return
-      const a = document.createElement("a")
-      a.href = URL.createObjectURL(b)
-      a.download = `${safeName(docName)}-${DOC_W}x${DOC_H}.png`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-    })
-    flash("Exported PNG")
+  const exportPNG = async () => {
+    const filename = `${safeName(docName)}-${DOC_W}x${DOC_H}.png`
+    const res = await saveFile(
+      () =>
+        new Promise<Blob>((resolve, reject) =>
+          renderDoc(layersRef.current, 1, true).toBlob((b) => (b ? resolve(b) : reject(new Error("PNG failed"))), "image/png"),
+        ),
+      { filename, description: "PNG image", mime: "image/png", ext: ".png" },
+    )
+    report(res, filename)
   }
 
   const swapColors = () => {

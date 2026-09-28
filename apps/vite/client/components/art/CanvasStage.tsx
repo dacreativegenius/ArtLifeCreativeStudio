@@ -32,6 +32,7 @@ type Drag =
 {type: "move";lx: number;ly: number;ids: Set<string>;moved: boolean;} |
 {type: "scale";ax: number;ay: number;hx: number;hy: number;orig: Map<string, Item>;moved: boolean;} |
 {type: "anchor";id: string;idx: number;orig: Item;moved: boolean;} |
+{type: "sample";} |
 {type: "rotate";cx: number;cy: number;a0: number;angle: number;box: Rect;orig: Map<string, Item>;moved: boolean;};
 
 const ROT_OFFSET = 28;
@@ -110,6 +111,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const colors = useRef({ accent: "#3d8bff", primary: "#ff7a1a" });
   const pressureState = useRef({ p: 0.5, lastT: 0, lastX: 0, lastY: 0 });
   const hoverAnchor = useRef<{id: string;idx: number;} | null>(null);
+  const sampleReq = useRef<{sx: number;sy: number;} | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const [panning, setPanning] = useState(false);
   const [readout, setReadout] = useState({ x: 0, y: 0, p: 0 });
@@ -276,6 +278,21 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       ctx.globalAlpha = 1;
     }
 
+    // eyedropper: read the composited artwork before any overlay is drawn
+    const req = sampleReq.current;
+    if (req) {
+      sampleReq.current = null;
+      const px2 = Math.floor(req.sx * dpr);
+      const py2 = Math.floor(req.sy * dpr);
+      if (px2 >= 0 && py2 >= 0 && px2 < c.width && py2 < c.height) {
+        const d = ctx.getImageData(px2, py2, 1, 1).data;
+        if (d[3] >= 10) {
+          const hex = rgbToHex(d[0], d[1], d[2]);
+          if (hex !== st.primary) st.setPrimary(hex);
+        }
+      }
+    }
+
     // overlay
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const acc = colors.current.accent;
@@ -310,7 +327,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       }
       const u = unionBounds(sel);
       const dr = drag.current;
-      if (st.tool === "transform" && dr?.type === "rotate") {
+      if (dr?.type === "rotate") {
         const b = dr.box;
         const corners = [
         [b.x, b.y],
@@ -349,7 +366,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         ctx.fillRect(hx + 10, hy - 9, tw + 10, 18);
         ctx.fillStyle = "#0f0f12";
         ctx.fillText(label, hx + 15, hy + 4);
-      } else if (u && st.tool === "transform") {
+      } else if (u && (st.tool === "transform" || st.tool === "select" || st.tool === "move")) {
         ctx.strokeRect(Math.round(X(u.x)) + 0.5, Math.round(Y(u.y)) + 0.5, u.w * zoom, u.h * zoom);
         const tx = X(u.x + u.w / 2);
         const ty = Y(u.y);
@@ -418,6 +435,28 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
 
     // brush cursor
     const pt = pointer.current;
+    if (pt.inside && !space.current && st.tool === "eyedropper") {
+      ctx.beginPath();
+      ctx.arc(pt.sx, pt.sy, 16, 0, Math.PI * 2);
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = st.primary;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      ctx.beginPath();
+      ctx.arc(pt.sx, pt.sy, 20.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(pt.sx, pt.sy, 11.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.beginPath();
+      ctx.moveTo(pt.sx - 5, pt.sy);
+      ctx.lineTo(pt.sx + 5, pt.sy);
+      ctx.moveTo(pt.sx, pt.sy - 5);
+      ctx.lineTo(pt.sx, pt.sy + 5);
+      ctx.stroke();
+    }
     if (pt.inside && !space.current && (st.tool === "brush" || st.tool === "eraser")) {
       const sz = st.tool === "eraser" ? st.eraserSize : st.currentBrush.size;
       const r = Math.max(1.5, sz * zoom / 2);
@@ -523,11 +562,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   };
 
   const sample = (sx: number, sy: number) => {
-    const c = canvasRef.current!;
-    const { dpr } = size.current;
-    const d = c.getContext("2d")!.getImageData(Math.floor(sx * dpr), Math.floor(sy * dpr), 1, 1).data;
-    if (d[3] < 10) return;
-    S.current.setPrimary(rgbToHex(d[0], d[1], d[2]));
+    sampleReq.current = { sx, sy };
+    dirty.current = true;
   };
 
   /* ---------- pointer handlers ---------- */
@@ -552,6 +588,26 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       return true;
     };
     const tol = 5 / zoom;
+    const tryHandles = () => {
+      if (!st.selection.length) return false;
+      const rb = rotHit(sx, sy);
+      if (rb) {
+        const orig = new Map<string, Item>();
+        for (const it of selectedItems()) orig.set(it.id, it);
+        const cx = rb.x + rb.w / 2;
+        const cy = rb.y + rb.h / 2;
+        drag.current = { type: "rotate", cx, cy, a0: Math.atan2(y - cy, x - cx), angle: 0, box: rb, orig, moved: false };
+        return true;
+      }
+      const h = handleHit(sx, sy);
+      if (h) {
+        const orig = new Map<string, Item>();
+        for (const it of selectedItems()) orig.set(it.id, it);
+        drag.current = { type: "scale", ...h, orig, moved: false };
+        return true;
+      }
+      return false;
+    };
     const startMarquee = () => {
       if (!e.shiftKey) st.setSelection([]);
       drag.current = { type: "marquee", x0: x, y0: y, x1: x, y1: y, additive: e.shiftKey, base: e.shiftKey ? st.selection : [] };
@@ -604,6 +660,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         break;
       case "eyedropper":
         sample(sx, sy);
+        drag.current = { type: "sample" };
         break;
       case "zoom":
         zoomAt(sx, sy, e.altKey ? 0.8 : 1.25);
@@ -613,6 +670,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         drag.current = { type: "lasso", pts: [{ x, y }], additive: e.shiftKey, base: e.shiftKey ? st.selection : [] };
         break;
       case "move":{
+          if (tryHandles()) break;
           if (st.selection.length) {
             drag.current = { type: "move", lx: x, ly: y, ids: new Set(st.selection), moved: false };
           } else {
@@ -622,22 +680,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           break;
         }
       case "transform":{
-          const rb = st.selection.length ? rotHit(sx, sy) : null;
-          if (rb) {
-            const orig = new Map<string, Item>();
-            for (const it of selectedItems()) orig.set(it.id, it);
-            const cx = rb.x + rb.w / 2;
-            const cy = rb.y + rb.h / 2;
-            drag.current = { type: "rotate", cx, cy, a0: Math.atan2(y - cy, x - cx), angle: 0, box: rb, orig, moved: false };
-            break;
-          }
-          const h = st.selection.length ? handleHit(sx, sy) : null;
-          if (h) {
-            const orig = new Map<string, Item>();
-            for (const it of selectedItems()) orig.set(it.id, it);
-            drag.current = { type: "scale", ...h, orig, moved: false };
-            break;
-          }
+          if (tryHandles()) break;
           const u = unionBounds(selectedItems());
           if (u && !e.shiftKey && x >= u.x && x <= u.x + u.w && y >= u.y && y <= u.y + u.h) {
             drag.current = { type: "move", lx: x, ly: y, ids: new Set(st.selection), moved: false };
@@ -656,13 +699,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           break;
         }
       case "select":{
-          const h = st.selection.length ? handleHit(sx, sy) : null;
-          if (h) {
-            const orig = new Map<string, Item>();
-            for (const it of selectedItems()) orig.set(it.id, it);
-            drag.current = { type: "scale", ...h, orig, moved: false };
-            break;
-          }
+          if (tryHandles()) break;
           const hit = hitTop(st.layers, x, y, tol);
           if (hit) {
             let sel = st.selection;
@@ -768,6 +805,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             st.setLayers((ls) => replaceItems(ls, map));
             break;
           }
+        case "sample":
+          sample(sx, sy);
+          break;
         case "rotate":{
             if (!d.moved) {
               st.snapshot();
@@ -848,7 +888,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   "grab" :
   tool === "zoom" ?
   "zoom-in" :
-  tool === "brush" || tool === "eraser" ?
+  tool === "brush" || tool === "eraser" || tool === "eyedropper" ?
   "none" :
   tool === "move" ?
   "move" :
@@ -862,7 +902,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     <section className="relative flex min-w-0 flex-1 flex-col" data-oid="3b8427b834" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
       <div
         ref={wrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="96ba0125af" data-oid-text-editable="false" data-oid-text-source="element:canvas|element:div|expression:2ca8832980f0">
+        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="96ba0125af" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2ca8832980f0">
         
         <canvas
           ref={canvasRef}
@@ -881,7 +921,6 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           }}
           onContextMenu={(e) => e.preventDefault()} data-oid="28c3e7ab9e" data-oid-style-dynamic="cursor" />
         
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(0,0,0,0.35)_100%)]" data-oid="83ba38ec53" />
         {studio.message &&
         <p className="pointer-events-none absolute left-1/2 top-ds-lg -translate-x-1/2 rounded-md border border-border bg-popover px-ds-md py-ds-xs text-label text-popover-foreground shadow-lg" data-oid="abb6119c62">
             {studio.message}

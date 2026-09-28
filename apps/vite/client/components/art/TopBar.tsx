@@ -97,7 +97,7 @@ function ToolOptions({ studio }: {studio: Studio;}) {
           <Trash2 className="h-3.5 w-3.5" data-oid="82d232198f" /> Delete
         </button>
         <p className="type-caption text-muted-foreground" data-oid="f1f71b57d4">
-          {t === "transform" ? "CORNERS SCALE · TOP HANDLE ROTATES · SHIFT SNAPS 15°" : t === "direct" ? "DRAG ANCHORS TO RESHAPE VECTORS" : t === "select" ? "DRAG CORNERS TO SCALE" : t === "move" ? "NO SELECTION MOVES WHOLE LAYER" : "DRAW A LOOP · SHIFT ADDS"}
+          {t === "transform" ? "CORNERS SCALE · TOP HANDLE ROTATES · SHIFT SNAPS 15°" : t === "direct" ? "DRAG ANCHORS TO RESHAPE VECTORS" : t === "select" ? "CORNERS SCALE · TOP HANDLE ROTATES" : t === "move" ? "CORNERS SCALE · TOP HANDLE ROTATES · NO SELECTION MOVES LAYER" : "DRAW A LOOP · SHIFT ADDS"}
         </p>
       </div>);
 

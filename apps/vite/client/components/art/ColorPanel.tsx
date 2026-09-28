@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Pipette } from "lucide-react";
 import type { Studio } from "./useStudio";
 import { Panel } from "./Panel";
 import { hexToHsv, hexToRgb, hsvToHex, normalizeHex, type HSV } from "../../lib/art/color";
@@ -85,6 +86,22 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
     setHexText(studio.primary);
   };
 
+  const pickColour = async () => {
+    const ED = (window as unknown as {EyeDropper?: new () => {open: () => Promise<{sRGBHex: string;}>;};}).EyeDropper;
+    if (!ED) {
+      studio.setTool("eyedropper");
+      studio.flash("Eyedropper — click or drag on the canvas");
+      return;
+    }
+    try {
+      const res = await new ED().open();
+      const n = normalizeHex(res.sRGBHex);
+      if (n) studio.setPrimary(n);
+    } catch {
+
+      /* cancelled */}
+  };
+
   const { r, g, b } = hexToRgb(studio.primary);
   const ringAngle = hsv.h * Math.PI / 180;
   const ringR = (RO + RI) / 2;
@@ -133,6 +150,15 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
               className="h-8 w-full bg-transparent type-caption text-foreground outline-none" data-oid="677db62d01" />
             
           </label>
+          <button
+            type="button"
+            aria-label="Eyedropper — pick a colour from anywhere on screen (I)"
+            title="Eyedropper (I)"
+            aria-pressed={studio.tool === "eyedropper"}
+            onClick={pickColour}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-input bg-background text-muted-foreground hover:bg-secondary hover:text-foreground aria-pressed:border-primary aria-pressed:text-primary" data-oid="c0c4283e20">
+            <Pipette className="h-4 w-4" data-oid="1dbfab9ffd" />
+          </button>
         </div>
 
         <dl className="grid w-full grid-cols-6 gap-ds-xs type-caption" data-oid="5d2dce1b53">
