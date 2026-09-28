@@ -731,7 +731,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     <section className="relative flex min-w-0 flex-1 flex-col" data-oid="3b8427b834" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
       <div
         ref={wrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="96ba0125af" data-oid-text-editable="false" data-oid-text-source="element:canvas|element:div|expression:27d5e5fb4155">
+        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="96ba0125af" data-oid-text-editable="false" data-oid-text-source="element:canvas|element:div|expression:2ca8832980f0">
         
         <canvas
           ref={canvasRef}

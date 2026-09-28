@@ -94,7 +94,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
               {layer.visible ? <Eye className="h-3.5 w-3.5" data-oid="72364899a2" data-oid-shared="true" /> : <EyeOff className="h-3.5 w-3.5" data-oid="4beee333ef" data-oid-shared="true" />}
             </button>
             <LayerThumb layer={layer} />
-            <div className="min-w-0 flex-1" data-index={index} data-oid="9701a3e47e" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:a3230297f8fa|element:p">
+            <div className="min-w-0 flex-1" data-index={index} data-oid="9701a3e47e" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:cf11757b6ec2|element:p">
               {editing === layer.id ?
             <input
               autoFocus

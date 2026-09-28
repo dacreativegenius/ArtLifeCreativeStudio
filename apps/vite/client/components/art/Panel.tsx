@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 export function Panel({ title, actions, children }: {title: string;actions?: ReactNode;children: ReactNode;}) {
   const [open, setOpen] = useState(true);
   return (
-    <section className="border-b border-border" data-oid="8f704ae429" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-callsite-editable="true" data-oid-text-editable="false" data-oid-text-source="element:header|expression:fca1d1d86d17">
+    <section className="border-b border-border" data-oid="8f704ae429" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-callsite-editable="true" data-oid-text-editable="false" data-oid-text-source="element:header|expression:ced44bfa891a">
       <header className="flex h-9 items-center gap-ds-xs px-ds-sm" data-oid="9a55fde14f" data-oid-callsite-deletable="true" data-oid-callsite-editable="true" data-oid-text-editable="false" data-oid-text-source="element:button|element:h2|expression:326b426f9ac7">
         <button
           type="button"

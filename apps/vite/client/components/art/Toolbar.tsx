@@ -36,12 +36,12 @@ const TOOLS: {id: ToolId;label: string;key: string;icon: LucideIcon;group: numbe
 
 export function Toolbar({ studio }: {studio: Studio;}) {
   return (
-    <nav aria-label="Tools" className="relative z-20 flex w-14 shrink-0 flex-col items-center gap-ds-xs border-r border-border bg-card py-ds-sm" data-oid="2686ed8674" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-text-editable="false" data-oid-text-source="expression:ad4d204371e3|element:div">
+    <nav aria-label="Tools" className="relative z-20 flex w-14 shrink-0 flex-col items-center gap-ds-xs border-r border-border bg-card py-ds-sm" data-oid="2686ed8674" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-text-editable="false" data-oid-text-source="expression:37d84f586184|element:div">
       {TOOLS.map((t, index) => {
         const Icon = t.icon;
         const newGroup = index > 0 && TOOLS[index - 1].group !== t.group;
         return (
-          <div key={t.id} className="flex flex-col items-center" data-oid="2e4fdeb1b1" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:7600f9bff402|element:div">
+          <div key={t.id} className="flex flex-col items-center" data-oid="2e4fdeb1b1" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:202897fbe581|element:div">
             {newGroup && <div className="mb-ds-xs h-px w-7 bg-border" data-oid="e4183407ae" data-oid-shared="true" />}
             <div className="group relative" data-oid="e6d1d7f301" data-oid-shared="true" data-oid-instance-targetable="true">
               <button
