@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Layer, type ToolId } from "../../lib/art/types"
 import { renderDoc, translateItem } from "../../lib/art/render"
 import { buildSVG, parseDTM, safeName, saveFile, serializeDTM, type SaveResult } from "../../lib/art/fileio"
+import { desktop } from "../../lib/art/desktop"
 
 export interface View {
   x: number
@@ -469,6 +470,44 @@ export function useStudio() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
+  // Electron: native menu commands + .dtm files opened from Finder / Explorer / File ▸ Open
+  useEffect(() => {
+    if (!desktop) return
+    const offMenu = desktop.onMenu((cmd) => {
+      const s = apiRef.current
+      const [kind, arg] = cmd.split(":")
+      if (kind === "tool") return s.setTool(arg as ToolId)
+      if (kind === "brush") {
+        s.setBrushId(arg as BrushId)
+        s.setTool("brush")
+        return
+      }
+      switch (cmd) {
+        case "new": return s.setNewDialogOpen(true)
+        case "save": return void s.saveDTM()
+        case "exportPNG": return void s.exportPNG()
+        case "exportSVG": return void s.exportSVG()
+        case "undo": return s.undo()
+        case "redo": return s.redo()
+        case "selectAll": return s.selectAll()
+        case "deselect": return s.deselect()
+        case "delete": return s.deleteSelection()
+        case "swap": return s.swapColors()
+        case "newLayer": return s.addLayer()
+        case "zoomIn": return s.zoomBy(1.25)
+        case "zoomOut": return s.zoomBy(0.8)
+        case "fit": return s.requestFit()
+      }
+    })
+    const offOpen = desktop.onOpenFile(({ name, text }) => {
+      void apiRef.current.loadDTM(new File([text], name, { type: "application/octet-stream" }))
+    })
+    return () => {
+      offMenu()
+      offOpen()
+    }
   }, [])
 
   return api

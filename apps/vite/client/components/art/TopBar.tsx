@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, FileImage, FilePlus2, FolderOpen, Maximize, Minus, PenTool, Plus, Redo2, Save, Shapes, Trash2, Undo2 } from "lucide-react";
 import type { Studio } from "./useStudio";
 import { BRUSHES } from "../../lib/art/types";
+import { desktop } from "../../lib/art/desktop";
 
 const barBtn =
 "inline-flex h-7 items-center gap-ds-xs rounded-md px-ds-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-35";
@@ -170,7 +171,7 @@ export function TopBar({ studio }: {studio: Studio;}) {
         <h1 className="text-heading font-bold tracking-[-0.02em] text-foreground" data-oid="13a9d052e2">
           Art Life
         </h1>
-        <span className="type-caption text-muted-foreground" data-oid="484fbb7b69">v0.2</span>
+        <span className="type-caption text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:22fd92977b0f|text">{desktop ? "DESKTOP" : "WEB"} v0.2</span>
       </div>
 
       <div className="flex items-center gap-ds-xs border-l border-border pl-ds-md" data-oid="04ea314637">

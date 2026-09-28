@@ -1,5 +1,6 @@
 import type { BlendMode, Item, Layer, ShapeItem, StrokeItem } from "./types"
 import { catmull, drawItem, ellipseSamples, itemBounds, pressureGeometry } from "./render"
+import { desktop } from "./desktop"
 
 /* ---------------- download helper ---------------- */
 
@@ -35,6 +36,16 @@ const isMobile = () =>
  * The picker is opened BEFORE the file is generated so the click still counts as a user gesture.
  */
 export async function saveFile(make: () => Blob | Promise<Blob>, o: SaveOpts): Promise<SaveResult> {
+  // Electron desktop app: native Save dialog via the preload bridge.
+  if (desktop) {
+    const blob = await make()
+    const saved = await desktop.saveFile(new Uint8Array(await blob.arrayBuffer()), {
+      filename: o.filename,
+      description: o.description,
+      ext: o.ext,
+    })
+    return saved ? "saved" : "cancelled"
+  }
   const w = window as unknown as {
     showSaveFilePicker?: (opts: unknown) => Promise<{ createWritable: () => Promise<{ write: (b: Blob) => Promise<void>; close: () => Promise<void> }> }>
   }

@@ -1,0 +1,64 @@
+{
+  "name": "art-life-desktop",
+  "productName": "Art Life",
+  "version": "0.2.0",
+  "description": "Art Life — pressure-sensitive pencil and vector drawing studio",
+  "author": "Art Life",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "build:web": "pnpm --dir ../../.. install && pnpm --dir .. run build",
+    "start": "npm run build:web && electron .",
+    "start:quick": "electron .",
+    "dev": "electron . --dev",
+    "dist": "npm run build:web && electron-builder",
+    "dist:mac": "npm run build:web && electron-builder --mac",
+    "dist:win": "npm run build:web && electron-builder --win",
+    "dist:linux": "npm run build:web && electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.artlife.studio",
+    "productName": "Art Life",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "renderer"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "dtm",
+        "name": "Art Life Drawing",
+        "description": "Art Life project",
+        "role": "Editor"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Graphics"
+    }
+  }
+}
