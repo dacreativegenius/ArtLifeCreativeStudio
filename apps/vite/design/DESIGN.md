@@ -1,88 +1,151 @@
 ---
-version: 1
-description: "A crisp blue foundation with restrained violet and sky accents."
-font:
-  inter: { source: google, sourceFamilyId: Inter, cssFamilyName: Inter, fallback: sans-serif }
-  source-serif-4: { source: google, sourceFamilyId: "Source Serif 4", cssFamilyName: "Source Serif 4", fallback: serif }
-  jetbrains-mono: { source: google, sourceFamilyId: "JetBrains Mono", cssFamilyName: "JetBrains Mono", fallback: monospace }
-spacing:
-  xs: "0.25rem"
-  sm: "0.5rem"
-  md: "1rem"
-  lg: "1.5rem"
-  xl: "2rem"
-  2xl: "3rem"
-  3xl: "4rem"
-radii:
-  none: "0px"
-  sm: "0.25rem"
-  md: "0.375rem"
-  lg: "0.5rem"
-  xl: "0.75rem"
-  full: "9999px"
-type:
-  scale:
-    display: { fontSize: "3rem", lineHeight: "1.1", letterSpacing: "-0.03em", fontKey: inter, fontStyle: normal }
-    heading: { fontSize: "1.5rem", lineHeight: "1.25", letterSpacing: "-0.015em", fontKey: inter, fontStyle: normal }
-    body: { fontSize: "1rem", lineHeight: "1.6", letterSpacing: "normal", fontKey: inter, fontStyle: normal }
-    label: { fontSize: "0.875rem", lineHeight: "1.4", letterSpacing: "0.01em", fontKey: source-serif-4, fontStyle: normal }
-    caption: { fontSize: "0.75rem", lineHeight: "1.4", letterSpacing: "0.02em", fontKey: jetbrains-mono, fontStyle: normal }
-  weights: { display: 700, heading: 600, body: 400, label: 500, caption: 400 }
 colors:
   primitives:
     expressive:
-      primary: { "100": "#DBEAFE", "300": "#93C5FD", "500": "#3B82F6", "700": "#1D4ED8", "900": "#1E3A8A" }
-      secondary: { "100": "#EDE9FE", "300": "#C4B5FD", "500": "#8B5CF6", "700": "#6D28D9", "900": "#4C1D95" }
-      tertiary: { "100": "#E0F2FE", "300": "#7DD3FC", "500": "#0EA5E9", "700": "#0369A1", "900": "#0C4A6E" }
-    status:
-      danger: { "100": "#FEE2E2", "300": "#FCA5A5", "500": "#EF4444", "700": "#B91C1C", "900": "#7F1D1D" }
-      success: { "100": "#DCFCE7", "300": "#86EFAC", "500": "#22C55E", "700": "#15803D", "900": "#14532D" }
-      warning: { "100": "#FEF3C7", "300": "#FCD34D", "500": "#F59E0B", "700": "#B45309", "900": "#78350F" }
-      info: { "100": "#DBEAFE", "300": "#93C5FD", "500": "#3B82F6", "700": "#1D4ED8", "900": "#1E3A8A" }
+      primary:
+        "100": 26.7 100% 91.2%
+        "300": 25.3 100% 73.9%
+        "500": 25.2 100% 55.1%
+        "700": 23.9 90.5% 41.4%
+        "900": 23.3 90.6% 25.1%
+      secondary:
+        "100": 217.7 100% 93.1%
+        "300": 216.7 100% 78.8%
+        "500": 215.9 100% 62%
+        "700": 217.1 73% 45.1%
+        "900": 216.9 74.3% 27.5%
+      tertiary:
+        "100": 297.7 61.9% 91.8%
+        "300": 297.6 60% 75.5%
+        "500": 296.7 57.8% 56.3%
+        "700": 292.5 53.8% 40.8%
+        "900": 293.1 59.3% 23.1%
     neutral:
-      gray: { "100": "#FFFFFF", "300": "#E5E7EB", "500": "#9CA3AF", "700": "#4B5563", "900": "#111827" }
+      graphite:
+        "100": 240 5.1% 30.6%
+        "300": 240 5.7% 24.1%
+        "500": 240 6.4% 18.4%
+        "700": 240 5.6% 14.1%
+        "900": 240 4.8% 8.2%
+      neutral:
+        "100": 45 13.3% 94.1%
+        "300": 42.9 4.8% 71.2%
+        "500": 40 2.5% 47.8%
+        "700": 252 2.9% 34.3%
+        "900": 240 7.7% 5.1%
+    status:
+      danger:
+        "100": 3.9 88.6% 93.1%
+        "300": 3.9 86.9% 79%
+        "500": 2.9 84.7% 61.6%
+        "700": 2.5 62.8% 44.3%
+        "900": 2.7 69.2% 25.5%
+      success:
+        "100": 149 59.2% 90.4%
+        "300": 148.5 56.9% 71.8%
+        "500": 150 50.4% 49.8%
+        "700": 146.7 58.6% 33.1%
+        "900": 146.8 60.9% 18%
+      warning:
+        "100": 41.4 91.3% 91%
+        "300": 41.2 89.1% 74.7%
+        "500": 40.1 87.6% 58.8%
+        "700": 39.9 82% 39.2%
+        "900": 40 86.1% 22.5%
   semantic:
-    background: "{color.neutral.gray.100}"
-    foreground: "{color.neutral.gray.900}"
-    card: "{color.neutral.gray.100}"
-    card-foreground: "{color.neutral.gray.900}"
-    popover: "{color.neutral.gray.100}"
-    popover-foreground: "{color.neutral.gray.900}"
-    primary: "{color.expressive.primary.500}"
-    primary-foreground: "{color.neutral.gray.100}"
-    secondary: "{color.expressive.secondary.100}"
-    secondary-foreground: "{color.neutral.gray.900}"
-    muted: "{color.neutral.gray.300}"
-    muted-foreground: "{color.neutral.gray.700}"
-    accent: "{color.expressive.tertiary.100}"
-    accent-foreground: "{color.expressive.tertiary.900}"
+    accent: "{color.expressive.secondary.500}"
+    accent-foreground: "{color.neutral.graphite.900}"
+    background: "{color.neutral.graphite.700}"
+    border: "{color.neutral.graphite.100}"
+    card: "{color.neutral.graphite.500}"
+    card-foreground: "{color.neutral.neutral.100}"
     destructive: "{color.status.danger.500}"
-    destructive-foreground: "{color.neutral.gray.100}"
-    border: "{color.neutral.gray.300}"
-    input: "{color.neutral.gray.300}"
+    destructive-foreground: "{color.neutral.graphite.900}"
+    foreground: "{color.neutral.neutral.100}"
+    input: "{color.neutral.graphite.300}"
+    muted: "{color.neutral.graphite.500}"
+    muted-foreground: "{color.neutral.neutral.300}"
+    popover: "{color.neutral.graphite.500}"
+    popover-foreground: "{color.neutral.neutral.100}"
+    primary: "{color.expressive.primary.500}"
+    primary-foreground: "{color.neutral.graphite.900}"
     ring: "{color.expressive.primary.500}"
+    secondary: "{color.neutral.graphite.300}"
+    secondary-foreground: "{color.neutral.neutral.100}"
     success: "{color.status.success.500}"
-    success-foreground: "{color.neutral.gray.100}"
+    success-foreground: "{color.neutral.graphite.900}"
     warning: "{color.status.warning.500}"
-    warning-foreground: "{color.neutral.gray.900}"
-    info: "{color.status.info.500}"
-    info-foreground: "{color.neutral.gray.100}"
-    chart-1: "{color.expressive.primary.500}"
-    chart-2: "{color.expressive.secondary.500}"
-    chart-3: "{color.expressive.tertiary.500}"
-    chart-4: "{color.status.success.500}"
-    chart-5: "{color.status.warning.500}"
+    warning-foreground: "{color.neutral.graphite.900}"
+description: "Art Life — dark graphite drawing studio: compact charcoal tool
+  panels that recede around the canvas, a warm orange accent for active tools,
+  cobalt for selection/vector handles, IBM Plex Sans UI with JetBrains Mono for
+  hex codes and numeric readouts."
+font:
+  ibm-plex-sans:
+    cssFamilyName: IBM Plex Sans
+    fallback: sans-serif
+    source: google
+    sourceFamilyId: IBM Plex Sans
+  jetbrains-mono:
+    cssFamilyName: JetBrains Mono
+    fallback: monospace
+    source: google
+    sourceFamilyId: JetBrains Mono
+id: 13bf3b64-c8b4-4feb-b280-86c3d9377b94
+radii:
+  full: 9999px
+  lg: 0.375rem
+  md: 0.25rem
+  none: 0px
+  sm: 0.1875rem
+  xl: 0.5rem
+spacing:
+  2xl: 2rem
+  3xl: 3rem
+  lg: 1rem
+  md: 0.75rem
+  sm: 0.5rem
+  xl: 1.5rem
+  xs: 0.25rem
+type:
+  scale:
+    body:
+      fontKey: ibm-plex-sans
+      fontSize: 0.8125rem
+      fontStyle: normal
+      letterSpacing: normal
+      lineHeight: "1.5"
+    caption:
+      fontKey: jetbrains-mono
+      fontSize: 0.6875rem
+      fontStyle: normal
+      letterSpacing: 0.01em
+      lineHeight: "1.4"
+    display:
+      fontKey: ibm-plex-sans
+      fontSize: 2rem
+      fontStyle: normal
+      letterSpacing: -0.02em
+      lineHeight: "1.1"
+    heading:
+      fontKey: ibm-plex-sans
+      fontSize: 0.9375rem
+      fontStyle: normal
+      letterSpacing: -0.005em
+      lineHeight: "1.3"
+    label:
+      fontKey: ibm-plex-sans
+      fontSize: 0.75rem
+      fontStyle: normal
+      letterSpacing: 0.02em
+      lineHeight: "1.35"
+  weights:
+    body: 400
+    caption: 400
+    display: 700
+    heading: 600
+    label: 500
+version: 1
 ---
 
-## Overview
-
-This is the normative design system for this app. Mercury's `@vibe/ds-compiler`
-resolves semantic aliases into the named primitive ramps above, then compiles
-them into `apps/vite/client/global.css`. Named spacing and radius scales are
-emitted alongside typography and color variables. `global.css` is generated;
-edit this document and run `pnpm ds:compile` to regenerate it.
-
-## Guardrail
-
-Components consume semantic utilities such as `bg-background`, `text-foreground`,
-`bg-primary`, and `rounded-lg`. Never hardcode palette values in components.
+Art Life — dark graphite drawing studio: compact charcoal tool panels that recede around the canvas, a warm orange accent for active tools, cobalt for selection/vector handles, IBM Plex Sans UI with JetBrains Mono for hex codes and numeric readouts.

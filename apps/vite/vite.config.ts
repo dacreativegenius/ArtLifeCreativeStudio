@@ -1,3 +1,4 @@
+import mercuryViewportPlugin from './client/mercury-viewport-plugin'
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
@@ -16,7 +17,7 @@ import path from "path"
 // react-hook-form, etc.) are reached via the @vibe/ui entries crawl above.
 export default defineConfig({
   base: "./",
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), mercuryViewportPlugin()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./client"),
