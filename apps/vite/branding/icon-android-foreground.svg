@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Art Life Creative Studio — Android adaptive icon foreground (108 dp canvas, mark kept inside the 66 dp safe zone). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 432 432" width="432" height="432">
+  <g transform="translate(62.4 63.6) scale(0.6)" fill="none" stroke="#141416" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 84C298 160 338 236 348 316H164C174 236 214 160 256 84Z"/>
+    <path d="M256 84V206"/>
+    <circle cx="256" cy="238" r="24"/>
+    <path d="M178 316 150 424"/>
+    <path d="M334 316 362 424"/>
+  </g>
+</svg>

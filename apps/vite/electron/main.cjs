@@ -6,6 +6,10 @@ const { pathToFileURL } = require("node:url")
 const DEV = process.argv.includes("--dev")
 const DEV_URL = process.env.ART_LIFE_DEV_URL || "http://localhost:5173/"
 const isMac = process.platform === "darwin"
+const APP_NAME = "Art Life Creative Studio"
+app.setName(APP_NAME)
+if (process.platform === "win32") app.setAppUserModelId("com.artlife.creativestudio")
+const WINDOW_ICON = path.join(__dirname, "build", "icon.png")
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -42,7 +46,7 @@ function openPath(filePath) {
       win.focus()
     } else pendingFile = payload
   } catch (err) {
-    dialog.showErrorBox("Art Life", `Could not open ${filePath}\n${err.message}`)
+    dialog.showErrorBox(APP_NAME, `Could not open ${filePath}\n${err.message}`)
   }
 }
 
@@ -50,9 +54,9 @@ const fileFromArgv = (argv) => argv.slice(1).find((a) => /\.dtm$/i.test(a) && fs
 
 async function showOpenDialog() {
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-    title: "Open Art Life project",
+    title: `Open ${APP_NAME} project`,
     properties: ["openFile"],
-    filters: [{ name: "Art Life project", extensions: ["dtm"] }],
+    filters: [{ name: `${APP_NAME} project`, extensions: ["dtm"] }],
   })
   if (!canceled && filePaths[0]) openPath(filePaths[0])
 }
@@ -92,7 +96,7 @@ const item = (label, command, accelerator) => ({ label, accelerator, registerAcc
 function buildMenu() {
   const template = [
     ...(isMac
-      ? [{ label: "Art Life", submenu: [{ role: "about" }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] }]
+      ? [{ label: APP_NAME, submenu: [{ role: "about" }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] }]
       : []),
     {
       label: "File",
@@ -182,7 +186,8 @@ function buildMenu() {
 function createWindow() {
   rendererReady = false
   win = new BrowserWindow({
-    title: "Art Life",
+    title: APP_NAME,
+    ...(fs.existsSync(WINDOW_ICON) && !isMac ? { icon: WINDOW_ICON } : {}),
     width: 1600,
     height: 1000,
     minWidth: 1100,
@@ -217,7 +222,7 @@ function createWindow() {
     load()
   } else {
     if (!fs.existsSync(path.join(rendererDir(), "index.html"))) {
-      dialog.showErrorBox("Art Life", `The app build was not found at:\n${rendererDir()}\n\nRun "npm start" (it builds the app first).`)
+      dialog.showErrorBox(APP_NAME, `The app build was not found at:\n${rendererDir()}\n\nRun "npm start" (it builds the app first).`)
     }
     win.loadURL("app://local/")
   }
@@ -232,7 +237,7 @@ app.on("open-file", (event, filePath) => {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  // Windows/Linux: double-click a .dtm while Art Life is already open
+  // Windows/Linux: double-click a .dtm while the app is already open
   app.on("second-instance", (_e, argv) => {
     const f = fileFromArgv(argv)
     if (f) openPath(f)

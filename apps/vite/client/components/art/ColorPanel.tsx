@@ -114,7 +114,7 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
 
   return (
     <Panel title="Colour">
-      <div className="flex flex-col items-center gap-ds-md" data-oid="d538ad3655" data-oid-text-editable="false" data-oid-text-source="element:div|element:div|element:label|expression:eeaaa1ed4cc0|element:div|element:dl">
+      <div className="flex flex-col items-center gap-ds-md" data-oid="d538ad3655" data-oid-text-editable="false" data-oid-text-source="element:div|element:div|element:label|expression:4cdb1b027ba1|element:div|element:dl">
         <div className="relative h-[216px] w-[216px]" data-oid="7ac676baf5">
           <canvas
             ref={canvasRef}
@@ -142,7 +142,7 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
               aria-checked={target === "stroke"}
               onClick={() => studio.setColorTarget("stroke")}
               title="Stroke colour (X toggles)"
-              className="flex flex-1 items-center gap-ds-sm px-ds-sm py-ds-xs text-left hover:bg-secondary aria-checked:bg-secondary" data-oid="3563198232" data-oid-text-editable="false" data-oid-text-source="expression:291a41be52fb|element:span">
+              className="flex flex-1 items-center gap-ds-sm px-ds-sm py-ds-xs text-left hover:bg-secondary aria-checked:bg-secondary" data-oid="3563198232" data-oid-text-editable="false" data-oid-text-source="expression:689ab39198ce|element:span">
               {studio.strokeEnabled ?
               <span aria-hidden="true" className="h-6 w-6 shrink-0 rounded-sm border-[5px] shadow-[0_0_0_1px_rgba(0,0,0,0.5)]" style={{ borderColor: studio.primary }} data-oid="dbca84a1a1" data-oid-style-dynamic="borderColor" /> :
 
@@ -173,7 +173,7 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
               aria-checked={target === "fill"}
               onClick={() => studio.setColorTarget("fill")}
               title="Fill colour (X toggles)"
-              className="flex flex-1 items-center gap-ds-sm px-ds-sm py-ds-xs text-left hover:bg-secondary aria-checked:bg-secondary" data-oid="32a2c0f5fc" data-oid-text-editable="false" data-oid-text-source="expression:43bb5ab7411b|element:span">
+              className="flex flex-1 items-center gap-ds-sm px-ds-sm py-ds-xs text-left hover:bg-secondary aria-checked:bg-secondary" data-oid="32a2c0f5fc" data-oid-text-editable="false" data-oid-text-source="expression:70263f61c81d|element:span">
               {studio.shapeFill ?
               <span aria-hidden="true" className="h-6 w-6 shrink-0 rounded-sm border border-border" style={{ backgroundColor: studio.secondary }} data-oid="965ecae71e" data-oid-style-dynamic="backgroundColor" /> :
 

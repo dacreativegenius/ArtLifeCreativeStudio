@@ -280,7 +280,7 @@ export function useStudio() {
           ],
           { type: "application/octet-stream" },
         ),
-      { filename, description: "Art Life project", mime: "application/octet-stream", ext: ".dtm", shareMime: "text/plain" },
+      { filename, description: "Art Life Creative Studio project", mime: "application/octet-stream", ext: ".dtm", shareMime: "text/plain" },
     )
     report(res, filename)
   }
@@ -288,7 +288,7 @@ export function useStudio() {
   const openFile = () => fileInputRef.current?.click()
 
   const loadDTM = async (file: File) => {
-    if (!/\.dtm$/i.test(file.name)) return flash("Choose an Art Life .dtm file")
+    if (!/\.dtm$/i.test(file.name)) return flash("Choose an Art Life Creative Studio .dtm file")
     try {
       const doc = await parseDTM(await file.text())
       applyDocSize(doc.width, doc.height)

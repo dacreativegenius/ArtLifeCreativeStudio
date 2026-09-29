@@ -204,7 +204,7 @@ export function buildSVG(layers: Layer[], W: number, H: number) {
   )
 }
 
-/* ---------------- .dtm (Art Life document) ---------------- */
+/* ---------------- .dtm (Art Life Creative Studio document) ---------------- */
 
 export const DTM_FORMAT = "art-life-dtm"
 export const DTM_VERSION = 1
@@ -214,7 +214,7 @@ type SerialItem = Exclude<Item, { kind: "image" }> | (Omit<Extract<Item, { kind:
 export interface DtmDocument {
   format: typeof DTM_FORMAT
   version: number
-  app: "Art Life"
+  app: string
   name: string
   created: string
   width: number
@@ -239,7 +239,7 @@ export function serializeDTM(opts: {
   const doc: DtmDocument = {
     format: DTM_FORMAT,
     version: DTM_VERSION,
-    app: "Art Life",
+    app: "Art Life Creative Studio",
     name: opts.name,
     created: new Date().toISOString(),
     width: opts.width,
@@ -291,8 +291,8 @@ export async function parseDTM(text: string) {
   } catch {
     throw new Error("Not a valid .dtm file")
   }
-  if (!raw || raw.format !== DTM_FORMAT || !Array.isArray(raw.layers)) throw new Error("Not an Art Life .dtm file")
-  if (raw.version > DTM_VERSION) throw new Error("This .dtm was saved by a newer Art Life")
+  if (!raw || raw.format !== DTM_FORMAT || !Array.isArray(raw.layers)) throw new Error("Not an Art Life Creative Studio .dtm file")
+  if (raw.version > DTM_VERSION) throw new Error("This .dtm was saved by a newer Art Life Creative Studio")
   const layers: Layer[] = await Promise.all(
     raw.layers.map(async (l) => ({
       id: String(l.id),

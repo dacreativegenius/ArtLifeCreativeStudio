@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Download, FileImage, FilePlus2, FolderOpen, Maximize, Minus, PenTool, Plus, Redo2, Save, Shapes, Trash2, Undo2 } from "lucide-react";
+import { ChevronDown, Download, FileImage, FilePlus2, FolderOpen, Maximize, Minus, Plus, Redo2, Save, Shapes, Trash2, Undo2 } from "lucide-react";
 import type { Studio } from "./useStudio";
 import { BRUSHES } from "../../lib/art/types";
 import { desktop } from "../../lib/art/desktop";
+import { ArtLifeLogo } from "./ArtLifeLogo";
 
 const barBtn =
 "inline-flex h-7 items-center gap-ds-xs rounded-md px-ds-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-35";
@@ -166,14 +167,16 @@ function SaveExportMenu({ studio }: {studio: Studio;}) {
 export function TopBar({ studio }: {studio: Studio;}) {
   return (
     <header className="relative z-30 flex h-11 shrink-0 items-center gap-ds-md border-b border-border bg-card px-ds-md" data-oid="a2f4138c72" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
-      <div className="flex w-[200px] items-center gap-ds-sm" data-oid="1c35455b9f">
+      <div className="flex w-[268px] items-center gap-ds-sm" data-oid="1c35455b9f">
         <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground" data-oid="cdfad74185">
-          <PenTool className="h-4 w-4" strokeWidth={2.25} data-oid="2121999639" />
+          <ArtLifeLogo className="h-[18px] w-[18px]" />
         </span>
-        <h1 className="text-heading font-bold tracking-[-0.02em] text-foreground" data-oid="13a9d052e2">
-          Art Life
-        </h1>
-        <span className="type-caption text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:22fd92977b0f|text">{desktop ? "DESKTOP" : "WEB"} v0.2</span>
+        <div className="flex min-w-0 flex-col" data-oid="a99936dc9a">
+          <h1 className="whitespace-nowrap text-heading font-bold leading-[1.1] tracking-[-0.02em] text-foreground" data-oid="13a9d052e2">
+            Art Life <span className="font-medium text-muted-foreground" data-oid="9509dd1f61">Creative Studio</span>
+          </h1>
+          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:22fd92977b0f|text">{desktop ? "DESKTOP" : "WEB"} v1.0</span>
+        </div>
       </div>
 
       <div className="flex items-center gap-ds-xs border-l border-border pl-ds-md" data-oid="04ea314637">
