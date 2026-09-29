@@ -1,7 +1,7 @@
 {
   "name": "art-life-creative-studio",
   "productName": "Art Life Creative Studio",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Art Life Creative Studio — pressure-sensitive pencil and vector drawing studio",
   "author": "Art Life Creative Studio",
   "private": true,
@@ -15,7 +15,8 @@
     "dist": "npm run icons && npm run build:web && electron-builder",
     "dist:mac": "npm run icons && npm run build:web && electron-builder --mac",
     "dist:win": "npm run icons && npm run build:web && electron-builder --win nsis portable",
-    "dist:portable": "npm run icons && npm run build:web && electron-builder --win portable",
+    "dist:portable": "npm run icons && npm run build:web && electron-builder --win portable --x64",
+    "portable": "npm run dist:portable",
     "dist:linux": "npm run icons && npm run build:web && electron-builder --linux"
   },
   "devDependencies": {
@@ -62,13 +63,12 @@
     },
     "win": {
       "target": [
-        "nsis",
         "portable"
       ],
       "icon": "build/icon.ico"
     },
     "portable": {
-      "artifactName": "Art Life Creative Studio ${version} Portable.exe"
+      "artifactName": "Art Life Creative Studio V${version} Portable.exe"
     },
     "nsis": {
       "oneClick": false,
