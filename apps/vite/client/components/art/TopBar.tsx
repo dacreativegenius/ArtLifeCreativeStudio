@@ -110,7 +110,7 @@ function ToolOptions({ studio }: {studio: Studio;}) {
   }
   return (
     <p className="type-caption text-muted-foreground" data-oid="d383281115" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
-      {t === "eyedropper" ? "CLICK TO SAMPLE · ALT+CLICK WITH BRUSH" : t === "zoom" ? "CLICK ZOOM IN · ALT+CLICK ZOOM OUT" : "DRAG TO PAN · HOLD SPACE ANYWHERE"}
+      {t === "penAdd" ? "CLICK A PATH OR SHAPE TO ADD AN ANCHOR · CURVE SHAPE IS KEPT" : t === "penDelete" ? "CLICK AN ANCHOR TO REMOVE IT" : t === "penConvert" ? "CLICK ANCHOR: SMOOTH ⇄ CORNER · DRAG ANCHOR: PULL OUT CURVE · DRAG HANDLE: BREAK IT" : t === "eyedropper" ? "CLICK TO SAMPLE · ALT+CLICK WITH BRUSH" : t === "zoom" ? "CLICK ZOOM IN · ALT+CLICK ZOOM OUT" : "DRAG TO PAN · HOLD SPACE ANYWHERE"}
     </p>);
 
 }

@@ -15,13 +15,16 @@ import {
   SquareDashed,
   Slash,
   Square,
-  ZoomIn,
-  type LucideIcon } from
+  ZoomIn } from
 "lucide-react";
+import type { ComponentType } from "react";
+import { AnchorConvertIcon, PenMinusIcon, PenPlusIcon } from "./AnchorIcons";
+
+type ToolIcon = ComponentType<{className?: string;strokeWidth?: number;}>;
 import type { Studio } from "./useStudio";
 import type { ToolId } from "../../lib/art/types";
 
-const TOOLS: {id: ToolId;label: string;key: string;icon: LucideIcon;group: number;}[] = [
+const TOOLS: {id: ToolId;label: string;key: string;icon: ToolIcon;group: number;}[] = [
 { id: "select", label: "Selection", key: "V", icon: MousePointer2, group: 0 },
 { id: "direct", label: "Direct Selection", key: "A", icon: MousePointer, group: 0 },
 { id: "move", label: "Move", key: "M", icon: Move, group: 0 },
@@ -35,6 +38,9 @@ const TOOLS: {id: ToolId;label: string;key: string;icon: LucideIcon;group: numbe
 { id: "rect", label: "Rectangle", key: "U", icon: Square, group: 2 },
 { id: "ellipse", label: "Ellipse", key: "O", icon: Circle, group: 2 },
 { id: "pen", label: "Pen · bezier paths", key: "P", icon: PenTool, group: 2 },
+{ id: "penAdd", label: "Add Anchor Point", key: "+", icon: PenPlusIcon, group: 2 },
+{ id: "penDelete", label: "Delete Anchor Point", key: "−", icon: PenMinusIcon, group: 2 },
+{ id: "penConvert", label: "Anchor Point · smooth ⇄ corner", key: "⇧C", icon: AnchorConvertIcon, group: 2 },
 { id: "hand", label: "Hand", key: "H", icon: Hand, group: 3 },
 { id: "zoom", label: "Zoom", key: "Z", icon: ZoomIn, group: 3 }];
 

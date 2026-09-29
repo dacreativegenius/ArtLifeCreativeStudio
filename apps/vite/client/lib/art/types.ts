@@ -14,6 +14,9 @@ export type ToolId =
   | "rect"
   | "ellipse"
   | "pen"
+  | "penAdd"
+  | "penDelete"
+  | "penConvert"
   | "hand"
   | "zoom"
 

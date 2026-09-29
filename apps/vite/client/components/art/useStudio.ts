@@ -468,7 +468,20 @@ export function useStudio() {
         s.requestFit()
         return
       }
+      if (mod && (k === "=" || k === "+")) {
+        e.preventDefault()
+        s.zoomBy(1.25)
+        return
+      }
+      if (mod && (k === "-" || k === "_")) {
+        e.preventDefault()
+        s.zoomBy(0.8)
+        return
+      }
       if (mod) return
+      if (k === "+") return s.setTool("penAdd")
+      if (k === "-" || k === "_") return s.setTool("penDelete")
+      if (e.shiftKey && k === "c") return s.setTool("penConvert")
       if (k === "delete" || k === "backspace") {
         e.preventDefault()
         s.deleteSelection()
@@ -499,8 +512,7 @@ export function useStudio() {
         else s.updateBrush({ size: clamp(Math.round(s.currentBrush.size * f + (k === "]" ? 1 : -1)), 1, 120) })
         return
       }
-      if (k === "=" || k === "+") return s.zoomBy(1.25)
-      if (k === "-") return s.zoomBy(0.8)
+      if (k === "=") return s.zoomBy(1.25)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)

@@ -143,6 +143,9 @@ function buildMenu() {
         item("Rectangle", "tool:rect", "U"),
         item("Ellipse", "tool:ellipse", "O"),
         item("Pen", "tool:pen", "P"),
+        item("Add Anchor Point", "tool:penAdd", "Plus"),
+        item("Delete Anchor Point", "tool:penDelete", "-"),
+        item("Anchor Point (smooth / corner)", "tool:penConvert", "Shift+C"),
         { type: "separator" },
         item("Hand", "tool:hand", "H"),
         item("Zoom", "tool:zoom", "Z"),
@@ -161,8 +164,8 @@ function buildMenu() {
     {
       label: "View",
       submenu: [
-        item("Zoom In", "zoomIn", "="),
-        item("Zoom Out", "zoomOut", "-"),
+        item("Zoom In", "zoomIn", "CmdOrCtrl+="),
+        item("Zoom Out", "zoomOut", "CmdOrCtrl+-"),
         item("Fit to Window", "fit", "CmdOrCtrl+0"),
         { type: "separator" },
         { role: "togglefullscreen" },
