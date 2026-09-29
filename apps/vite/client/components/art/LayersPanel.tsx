@@ -231,10 +231,23 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
                 role="option"
                 data-index={itemIndex}
                 aria-selected={studio.selection.includes(it.id)}
-                onClick={(e) => selectItem(layer.id, it.id, e.shiftKey)}
-                className="flex cursor-pointer items-center gap-ds-xs rounded-sm px-ds-xs py-[3px] text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground" data-oid="83534bb0e9" data-oid-shared="true" data-oid-text-editable="false">
+                data-hidden={!!it.hidden}
+                onClick={(e) => !it.hidden && selectItem(layer.id, it.id, e.shiftKey)}
+                className="flex cursor-pointer items-center gap-ds-xs rounded-sm px-ds-xs py-[3px] text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground data-[hidden=true]:opacity-50" data-oid="83534bb0e9" data-oid-shared="true" data-oid-text-editable="false">
+                      <button
+                  type="button"
+                  aria-label={it.hidden ? `Show ${itemLabel(it)}` : `Hide ${itemLabel(it)}`}
+                  aria-pressed={!it.hidden}
+                  title={it.hidden ? "Show" : "Hide"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    studio.toggleItemHidden(it.id);
+                  }}
+                  className="-ml-[2px] grid h-5 w-5 shrink-0 place-items-center rounded-sm hover:bg-card hover:text-foreground" data-oid="dff98d1453" data-oid-shared="true">
+                        {it.hidden ? <EyeOff className="h-3 w-3" data-oid="3d97550ee5" data-oid-shared="true" /> : <Eye className="h-3 w-3" data-oid="8535742422" data-oid-shared="true" />}
+                      </button>
                       <ItemIcon it={it} />
-                      <span className="min-w-0 flex-1 truncate" data-oid="dff98d1453" data-oid-shared="true">{itemLabel(it)}</span>
+                      <span className="min-w-0 flex-1 truncate" data-oid="86ad755909" data-oid-shared="true">{itemLabel(it)}</span>
                       {(it.kind === "path" || it.kind === "shape") && (it.fill || (it.kind === "path" ? it.stroke : it.color)) &&
                 <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-[2px] border border-border" style={{ backgroundColor: it.fill ?? (it.kind === "path" ? it.stroke! : it.color) }} data-oid="4d7b0eaa2f" data-oid-shared="true" data-oid-style-dynamic="backgroundColor" />
                 }

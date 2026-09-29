@@ -14,16 +14,9 @@ function Range({
   max,
   step = 1,
   format,
-  onChange
-
-
-
-
-
-
-
-
-}: {label: string;value: number;min: number;max: number;step?: number;format: (v: number) => string;onChange: (v: number) => void;}) {
+  onChange,
+  onPointerDown
+}: {label: string;value: number;min: number;max: number;step?: number;format: (v: number) => string;onChange: (v: number) => void;onPointerDown?: () => void;}) {
   return (
     <label className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="6213878dcc" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="expression:64c65374dbab|element:input|element:output">
       {label}
@@ -34,6 +27,7 @@ function Range({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
+        onPointerDown={onPointerDown}
         className="h-1 w-28 cursor-pointer accent-primary" data-oid="0e4ba497ec" />
       
       <output className="w-10 type-caption text-foreground" data-oid="f47c6f1e4a">{format(value)}</output>
@@ -68,11 +62,11 @@ function ToolOptions({ studio }: {studio: Studio;}) {
   if (t === "line" || t === "rect" || t === "ellipse" || t === "pen") {
     return (
       <div className="flex items-center gap-ds-lg" data-oid="537405d26c" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-text-editable="false">
-        <Range label="Stroke" value={studio.shapeStroke} min={0} max={60} format={(v) => `${v}px`} onChange={studio.setShapeStroke} />
+        <Range label="Stroke" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={120} format={(v) => `${v}px`} onPointerDown={studio.beginSelectionEdit} onChange={(v) => studio.setStrokeWidth(v, false)} />
         {t !== "line" &&
         <label className="flex items-center gap-ds-xs text-label text-muted-foreground" data-oid="ef164641b7">
-            <input type="checkbox" checked={studio.shapeFill} onChange={(e) => studio.setShapeFill(e.target.checked)} className="accent-primary" data-oid="4e8387f698" />
-            Fill with secondary colour
+            <input type="checkbox" checked={studio.shapeFill} onChange={(e) => studio.setFillEnabled(e.target.checked)} className="accent-primary" data-oid="4e8387f698" />
+            Fill
           </label>
         }
         <p className="type-caption text-muted-foreground" data-oid="4f56fef441">{t === "pen" ? "CLICK CORNER · DRAG CURVE · CLICK START TO CLOSE · ENTER FINISHES · ⌫ UNDOES POINT" : "SHIFT constrains"}</p>
@@ -89,10 +83,13 @@ function ToolOptions({ studio }: {studio: Studio;}) {
   }
   if (t === "select" || t === "direct" || t === "move" || t === "lasso" || t === "transform") {
     return (
-      <div className="flex items-center gap-ds-sm" data-oid="ea401170a0" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
+      <div className="flex items-center gap-ds-sm" data-oid="ea401170a0" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-text-editable="false" data-oid-text-source="element:p|expression:a2c8264db307|element:button|element:button|element:button|element:p">
         <p className="type-caption text-muted-foreground" data-oid="d702681c17">
           <output className="text-accent" data-oid="f0e5a67eba">{studio.selection.length}</output> SELECTED
         </p>
+        {studio.selection.length > 0 &&
+        <Range label="Stroke" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={120} format={(v) => `${v}px`} onPointerDown={studio.beginSelectionEdit} onChange={(v) => studio.setStrokeWidth(v, false)} />
+        }
         <button type="button" className={barBtn} onClick={studio.selectAll} data-oid="b053a94375" data-oid-classname-dynamic="true">
           Select all
         </button>

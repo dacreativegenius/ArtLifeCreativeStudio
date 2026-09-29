@@ -366,6 +366,7 @@ function drawErase(ctx: CanvasRenderingContext2D, s: EraseItem) {
 }
 
 export function drawItem(ctx: CanvasRenderingContext2D, it: Item) {
+  if (it.hidden) return
   ctx.save()
   switch (it.kind) {
     case "stroke":
@@ -498,6 +499,7 @@ export function pointInPoly(x: number, y: number, poly: XY[]) {
 }
 
 export function hitItem(it: Item, x: number, y: number, tol: number): boolean {
+  if (it.hidden) return false
   if (it.kind === "erase") return false
   if (it.kind === "image") {
     if (it.rot) {

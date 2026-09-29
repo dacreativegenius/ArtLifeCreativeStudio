@@ -401,7 +401,10 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         const d = ctx.getImageData(px2, py2, 1, 1).data;
         if (d[3] >= 10) {
           const hex = rgbToHex(d[0], d[1], d[2]);
-          if (hex !== st.primary) st.setPrimary(hex);
+          if (hex !== (st.colorTarget === "stroke" ? st.primary : st.secondary)) {
+            if (st.colorTarget === "stroke") st.setPrimary(hex);else
+            st.setSecondary(hex);
+          }
         }
       }
     }
@@ -809,7 +812,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       if (!l.visible || l.locked) continue;
       for (let i = l.items.length - 1; i >= 0; i--) {
         const it = l.items[i];
-        if (!canEditAnchors(it)) continue;
+        if (it.hidden || !canEditAnchors(it)) continue;
         const p = toPathItem(it)!;
         const onAnchor = p.subpaths.some((sp) => sp.nodes.some((n) => Math.hypot(n.x - x, n.y - y) <= tol * 1.6));
         const onLine = nearestSegment(p, x, y).dist <= tol + (p.stroke ? p.size / 2 : 0);
@@ -1042,7 +1045,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             shape: tool,
             points: shapePoints(tool, x, y, x, y, false),
             color: st.primary,
-            size: st.shapeStroke,
+            size: st.strokeEnabled ? st.shapeStroke : 0,
             opacity: 1,
             fill: st.shapeFill && tool !== "line" ? st.secondary : null
           };
@@ -1061,7 +1064,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
                 id: uid("p"),
                 kind: "path",
                 subpaths: [{ closed: false, nodes: [cornerNode(x, y)] }],
-                stroke: st.shapeStroke > 0 ? st.primary : null,
+                stroke: st.strokeEnabled && st.shapeStroke > 0 ? st.primary : null,
                 size: st.shapeStroke,
                 fill: st.shapeFill ? st.secondary : null,
                 opacity: 1
@@ -1427,7 +1430,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       const ids: string[] = [];
       for (const l of st.layers) {
         if (!l.visible || l.locked) continue;
-        for (const it of l.items) if (it.kind !== "erase" && fn(it)) ids.push(it.id);
+        for (const it of l.items) if (it.kind !== "erase" && !it.hidden && fn(it)) ids.push(it.id);
       }
       return ids;
     };

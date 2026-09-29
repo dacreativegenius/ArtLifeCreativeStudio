@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Layer, type LayerType, type ToolId } from "../../lib/art/types"
+import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Item, type Layer, type LayerType, type ToolId } from "../../lib/art/types"
 import { renderDoc, translateItem } from "../../lib/art/render"
 import { buildSVG, parseDTM, safeName, saveFile, serializeDTM, type SaveResult } from "../../lib/art/fileio"
 import { desktop } from "../../lib/art/desktop"
@@ -33,6 +33,10 @@ function makeLayer(name: string, type: LayerType, id = uid("L")): Layer {
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
+export type ColorTarget = "stroke" | "fill"
+
+const isVectorStroke = (it: Item) => it.kind === "stroke" && (it.brush === "vector-pressure" || it.brush === "vector-fixed")
+
 export function useStudio() {
   const [layers, setLayers] = useState<Layer[]>(() => [makeLayer("Sketch", "pencil", "layer-sketch"), makeLayer("Ink", "vector", "layer-ink")])
   const [activeLayerId, setActiveLayerId] = useState("layer-ink")
@@ -42,6 +46,8 @@ export function useStudio() {
   const [eraserSize, setEraserSize] = useState(28)
   const [shapeStroke, setShapeStroke] = useState(4)
   const [shapeFill, setShapeFill] = useState(false)
+  const [strokeEnabled, setStrokeEnabled] = useState(true)
+  const [colorTarget, setColorTarget] = useState<ColorTarget>("stroke")
   const [fillTolerance, setFillTolerance] = useState(48)
   const [stabilizer, setStabilizer] = useState(0.3)
   const [simulatePressure, setSimulatePressure] = useState(true)
@@ -199,7 +205,7 @@ export function useStudio() {
 
   const selectAll = () => {
     if (!activeLayer || activeLayer.locked) return
-    setSelection(activeLayer.items.filter((i) => i.kind !== "erase").map((i) => i.id))
+    setSelection(activeLayer.items.filter((i) => i.kind !== "erase" && !i.hidden).map((i) => i.id))
   }
 
   const nudge = (dx: number, dy: number) => {
@@ -338,6 +344,104 @@ export function useStudio() {
   const updateBrush = (patch: Partial<BrushSettings>) =>
     setBrushSettings((s) => ({ ...s, [brushId]: { ...s[brushId], ...patch } }))
 
+  /* ---------- stroke / fill colour + stroke weight (applies to the selection, like Illustrator) ---------- */
+
+  const patchSelection = (fn: (it: Item) => Item | null, history: boolean) => {
+    if (!selection.length) return
+    const ids = new Set(selection)
+    const apply = (prev: Layer[]) =>
+      prev.map((l) =>
+        l.items.some((i) => ids.has(i.id)) ? { ...l, items: l.items.map((i) => (ids.has(i.id) ? fn(i) ?? i : i)) } : l,
+      )
+    if (history) commit(apply)
+    else setLayers(apply)
+  }
+
+  /** Call on pointer-down of a continuous control (wheel, slider) so a whole drag is one undo step. */
+  const beginSelectionEdit = () => {
+    if (selection.length) snapshot()
+  }
+
+  const colorPatch = (target: ColorTarget, hex: string | null) => (it: Item): Item | null => {
+    if (target === "stroke") {
+      if (it.kind === "shape") return hex ? { ...it, color: hex, size: it.size || Math.max(1, shapeStroke) } : { ...it, size: 0 }
+      if (it.kind === "path") return hex ? { ...it, stroke: hex, size: it.size || Math.max(1, shapeStroke) } : { ...it, stroke: null }
+      if (it.kind === "stroke" && hex) return { ...it, color: hex }
+      return null
+    }
+    if (it.kind === "shape" && it.shape !== "line") return { ...it, fill: hex }
+    if (it.kind === "path") return { ...it, fill: hex }
+    return null
+  }
+
+  const setColorFor = (target: ColorTarget, hex: string, history = true) => {
+    if (target === "stroke") {
+      setPrimary(hex)
+      setStrokeEnabled(true)
+    } else {
+      setSecondary(hex)
+      setShapeFill(true)
+    }
+    patchSelection(colorPatch(target, hex), history)
+  }
+
+  const setActiveColor = (hex: string, history = true) => setColorFor(colorTarget, hex, history)
+
+  const setColorNone = (target: ColorTarget) => {
+    if (target === "stroke") setStrokeEnabled(false)
+    else setShapeFill(false)
+    patchSelection(colorPatch(target, null), true)
+  }
+
+  const setFillEnabled = (on: boolean) => (on ? setColorFor("fill", secondary) : setColorNone("fill"))
+
+  const setStrokeWidth = (v: number, history = true) => {
+    setShapeStroke(v)
+    if (v > 0) setStrokeEnabled(true)
+    patchSelection((it) => {
+      if (it.kind === "shape") return { ...it, size: v }
+      if (it.kind === "path") return { ...it, size: v, stroke: v > 0 ? it.stroke ?? primary : it.stroke }
+      if (isVectorStroke(it)) return { ...it, size: Math.max(1, v) }
+      return null
+    }, history)
+  }
+
+  const toggleItemHidden = (id: string) => {
+    commit((prev) => prev.map((l) => (l.items.some((i) => i.id === id) ? { ...l, items: l.items.map((i) => (i.id === id ? { ...i, hidden: !i.hidden } : i)) } : l)))
+    setSelection((s) => s.filter((x) => x !== id))
+  }
+
+  // selecting a vector object loads its stroke / fill / weight into the colour controls
+  useEffect(() => {
+    if (!selection.length) return
+    const ids = new Set(selection)
+    let it: Item | undefined
+    for (const l of layersRef.current) {
+      it = l.items.find((i) => ids.has(i.id) && (i.kind === "shape" || i.kind === "path" || i.kind === "stroke"))
+      if (it) break
+    }
+    if (!it) return
+    if (it.kind === "shape") {
+      setPrimary(it.color)
+      setStrokeEnabled(it.size > 0)
+      if (it.size > 0) setShapeStroke(Math.round(it.size))
+      if (it.shape !== "line") {
+        setShapeFill(!!it.fill)
+        if (it.fill) setSecondary(it.fill)
+      }
+    } else if (it.kind === "path") {
+      if (it.stroke) setPrimary(it.stroke)
+      setStrokeEnabled(!!it.stroke && it.size > 0)
+      if (it.stroke && it.size > 0) setShapeStroke(Math.round(it.size))
+      setShapeFill(!!it.fill)
+      if (it.fill) setSecondary(it.fill)
+    } else if (it.kind === "stroke") {
+      setPrimary(it.color)
+      if (isVectorStroke(it)) setShapeStroke(Math.round(it.size))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection])
+
   const api = {
     layers,
     setLayers,
@@ -357,6 +461,16 @@ export function useStudio() {
     setShapeStroke,
     shapeFill,
     setShapeFill,
+    strokeEnabled,
+    colorTarget,
+    setColorTarget,
+    setColorFor,
+    setActiveColor,
+    setColorNone,
+    setFillEnabled,
+    setStrokeWidth,
+    beginSelectionEdit,
+    toggleItemHidden,
     fillTolerance,
     setFillTolerance,
     stabilizer,
@@ -500,7 +614,8 @@ export function useStudio() {
         s.setTool("brush")
         return
       }
-      if (k === "x") return s.swapColors()
+      // Illustrator: X toggles the Stroke/Fill target, Shift+X swaps the two colours
+      if (k === "x") return e.shiftKey ? s.swapColors() : s.setColorTarget(s.colorTarget === "stroke" ? "fill" : "stroke")
       if (k === "d") {
         s.setPrimary("#141417")
         s.setSecondary("#ffffff")

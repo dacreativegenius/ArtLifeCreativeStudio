@@ -35,6 +35,7 @@ export interface StrokeItem {
   opacity: number
   points: Pt[]
   seed: number
+  hidden?: boolean
 }
 
 export interface EraseItem {
@@ -42,6 +43,7 @@ export interface EraseItem {
   kind: "erase"
   size: number
   points: Pt[]
+  hidden?: boolean
 }
 
 export interface ShapeItem {
@@ -53,6 +55,7 @@ export interface ShapeItem {
   size: number
   opacity: number
   fill: string | null
+  hidden?: boolean
 }
 
 export interface ImageItem {
@@ -64,6 +67,7 @@ export interface ImageItem {
   h: number
   rot?: number
   canvas: HTMLCanvasElement
+  hidden?: boolean
 }
 
 /** Bezier anchor with absolute in/out handle positions (handle === anchor means a corner). */
@@ -91,6 +95,7 @@ export interface PathItem {
   fill: string | null
   opacity: number
   evenOdd?: boolean
+  hidden?: boolean
 }
 
 export type Item = StrokeItem | EraseItem | ShapeItem | ImageItem | PathItem

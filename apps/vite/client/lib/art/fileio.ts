@@ -173,6 +173,7 @@ export function buildSVG(layers: Layer[], W: number, H: number) {
     if (!l.visible) continue
     let content = ""
     for (const it of l.items) {
+      if (it.hidden) continue
       if (it.kind === "erase") {
         if (!content) continue
         const id = `erase-${maskN++}`
