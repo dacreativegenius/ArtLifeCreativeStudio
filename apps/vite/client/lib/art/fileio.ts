@@ -1,4 +1,4 @@
-import type { BlendMode, Item, Layer, ShapeItem, StrokeItem } from "./types"
+import type { BlendMode, Item, Layer, LayerType, PathItem, ShapeItem, StrokeItem } from "./types"
 import { catmull, drawItem, ellipseSamples, itemBounds, pressureGeometry } from "./render"
 import { desktop } from "./desktop"
 
@@ -145,6 +145,26 @@ function shapeSVG(s: ShapeItem) {
   return `<path d="${polyD(ellipseSamples(p, 24), true)}" ${fill} ${stroke} stroke-linejoin="round" opacity="${s.opacity}"/>`
 }
 
+function pathSVG(p: PathItem) {
+  let d = ""
+  for (const sp of p.subpaths) {
+    const n = sp.nodes.length
+    if (!n) continue
+    d += `M${f(sp.nodes[0].x)} ${f(sp.nodes[0].y)}`
+    const segs = sp.closed ? n : n - 1
+    for (let i = 0; i < segs; i++) {
+      const a = sp.nodes[i]
+      const b = sp.nodes[(i + 1) % n]
+      const straight = a.ox === a.x && a.oy === a.y && b.ix === b.x && b.iy === b.y
+      d += straight ? `L${f(b.x)} ${f(b.y)}` : `C${f(a.ox)} ${f(a.oy)} ${f(b.ix)} ${f(b.iy)} ${f(b.x)} ${f(b.y)}`
+    }
+    if (sp.closed) d += "Z"
+  }
+  const fill = p.fill ? `fill="${p.fill}"${p.evenOdd ? ' fill-rule="evenodd"' : ""}` : `fill="none"`
+  const stroke = p.stroke && p.size > 0 ? `stroke="${p.stroke}" stroke-width="${f(p.size)}" stroke-linecap="round" stroke-linejoin="round"` : `stroke="none"`
+  return `<path d="${d}" ${fill} ${stroke} opacity="${p.opacity}"/>`
+}
+
 export function buildSVG(layers: Layer[], W: number, H: number) {
   const defs: string[] = []
   let maskN = 0
@@ -166,6 +186,7 @@ export function buildSVG(layers: Layer[], W: number, H: number) {
       }
       if (it.kind === "stroke") content += strokeSVG(it)
       else if (it.kind === "shape") content += shapeSVG(it)
+      else if (it.kind === "path") content += pathSVG(it)
       else if (it.kind === "image") {
         const t = it.rot ? ` transform="rotate(${f((it.rot * 180) / Math.PI)} ${f(it.x + it.w / 2)} ${f(it.y + it.h / 2)})"` : ""
         content += `<image x="${f(it.x)}" y="${f(it.y)}" width="${f(it.w)}" height="${f(it.h)}" preserveAspectRatio="none" href="${it.canvas.toDataURL("image/png")}"${t}/>`
@@ -255,6 +276,13 @@ function loadCanvas(src: string): Promise<HTMLCanvasElement> {
 
 const BLENDS: BlendMode[] = ["normal", "multiply", "screen"]
 
+/** Older .dtm files have no layer type: pencil-only layers become pencil layers, everything else vector. */
+function inferType(l: { type?: string; items?: { kind: string; brush?: string }[] }): LayerType {
+  if (l.type === "pencil" || l.type === "vector") return l.type
+  const items = (l.items ?? []).filter((i) => i.kind !== "erase")
+  return items.length && items.every((i) => i.kind === "stroke" && String(i.brush).startsWith("pencil")) ? "pencil" : "vector"
+}
+
 export async function parseDTM(text: string) {
   let raw: DtmDocument
   try {
@@ -272,6 +300,7 @@ export async function parseDTM(text: string) {
       locked: !!l.locked,
       opacity: typeof l.opacity === "number" ? l.opacity : 1,
       blend: BLENDS.includes(l.blend as BlendMode) ? l.blend : "normal",
+      type: inferType(l),
       items: await Promise.all(
         (l.items ?? []).map(async (it): Promise<Item> => {
           if (it.kind === "image") {

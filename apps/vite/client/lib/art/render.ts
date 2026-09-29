@@ -6,12 +6,14 @@ import {
   type EraseItem,
   type Item,
   type Layer,
+  type PathItem,
+  type PathNode,
   type Pt,
   type Rect,
   type ShapeItem,
   type StrokeItem,
+  type SubPath,
 } from "./types"
-import { hexToRgb } from "./color"
 
 export type XY = { x: number; y: number }
 
@@ -271,6 +273,82 @@ function drawShape(ctx: CanvasRenderingContext2D, s: ShapeItem) {
   }
 }
 
+/* ---------------- Bezier paths (pen tool + live-paint fills) ---------------- */
+
+const isStraight = (a: PathNode, b: PathNode) => a.ox === a.x && a.oy === a.y && b.ix === b.x && b.iy === b.y
+
+export function subpathSamples(sp: SubPath, per = 16): XY[] {
+  const n = sp.nodes.length
+  if (!n) return []
+  const out: XY[] = [{ x: sp.nodes[0].x, y: sp.nodes[0].y }]
+  const segs = sp.closed ? n : n - 1
+  for (let i = 0; i < segs; i++) {
+    const a = sp.nodes[i]
+    const b = sp.nodes[(i + 1) % n]
+    if (isStraight(a, b)) {
+      out.push({ x: b.x, y: b.y })
+      continue
+    }
+    for (let s = 1; s <= per; s++) {
+      const t = s / per
+      const u = 1 - t
+      out.push({
+        x: u * u * u * a.x + 3 * u * u * t * a.ox + 3 * u * t * t * b.ix + t * t * t * b.x,
+        y: u * u * u * a.y + 3 * u * u * t * a.oy + 3 * u * t * t * b.iy + t * t * t * b.y,
+      })
+    }
+  }
+  return out
+}
+
+export function tracePath(ctx: CanvasRenderingContext2D | Path2D, subpaths: SubPath[]) {
+  for (const sp of subpaths) {
+    const n = sp.nodes.length
+    if (!n) continue
+    ctx.moveTo(sp.nodes[0].x, sp.nodes[0].y)
+    const segs = sp.closed ? n : n - 1
+    for (let i = 0; i < segs; i++) {
+      const a = sp.nodes[i]
+      const b = sp.nodes[(i + 1) % n]
+      if (isStraight(a, b)) ctx.lineTo(b.x, b.y)
+      else ctx.bezierCurveTo(a.ox, a.oy, b.ix, b.iy, b.x, b.y)
+    }
+    if (sp.closed) ctx.closePath()
+  }
+}
+
+function drawPath(ctx: CanvasRenderingContext2D, it: PathItem) {
+  const p = new Path2D()
+  tracePath(p, it.subpaths)
+  ctx.globalAlpha = it.opacity
+  if (it.fill) {
+    ctx.fillStyle = it.fill
+    ctx.fill(p, it.evenOdd ? "evenodd" : "nonzero")
+  }
+  if (it.stroke && it.size > 0) {
+    ctx.strokeStyle = it.stroke
+    ctx.lineWidth = it.size
+    ctx.lineCap = "round"
+    ctx.lineJoin = "round"
+    ctx.stroke(p)
+  }
+}
+
+function mapPath(it: PathItem, f: (x: number, y: number) => XY): PathItem {
+  return {
+    ...it,
+    subpaths: it.subpaths.map((sp) => ({
+      closed: sp.closed,
+      nodes: sp.nodes.map((n) => {
+        const a = f(n.x, n.y)
+        const i = f(n.ix, n.iy)
+        const o = f(n.ox, n.oy)
+        return { x: a.x, y: a.y, ix: i.x, iy: i.y, ox: o.x, oy: o.y }
+      }),
+    })),
+  }
+}
+
 function drawErase(ctx: CanvasRenderingContext2D, s: EraseItem) {
   const pts = s.points
   if (!pts.length) return
@@ -301,6 +379,9 @@ export function drawItem(ctx: CanvasRenderingContext2D, it: Item) {
     case "erase":
       drawErase(ctx, it)
       break
+    case "path":
+      drawPath(ctx, it)
+      break
     case "image":
       if (it.rot) {
         ctx.translate(it.x + it.w / 2, it.y + it.h / 2)
@@ -323,6 +404,8 @@ export function outlineOf(it: Item): { pts: XY[]; closed: boolean } {
     case "shape":
       if (it.shape === "ellipse") return { pts: ellipseSamples(it.points), closed: true }
       return { pts: it.points, closed: it.shape === "rect" }
+    case "path":
+      return { pts: it.subpaths.flatMap((sp) => subpathSamples(sp)), closed: !!it.subpaths[0]?.closed }
     case "image": {
       const corners = [
         { x: it.x, y: it.y },
@@ -344,7 +427,14 @@ export function rotPt(x: number, y: number, cx: number, cy: number, a: number): 
   return { x: cx + (x - cx) * c - (y - cy) * s, y: cy + (x - cx) * s + (y - cy) * c }
 }
 
+/** Separate outlines per sub-path (for drawing selection outlines). */
+export function outlinesOf(it: Item): { pts: XY[]; closed: boolean }[] {
+  if (it.kind === "path") return it.subpaths.map((sp) => ({ pts: subpathSamples(sp), closed: sp.closed }))
+  return [outlineOf(it)]
+}
+
 export function rotateItem(it: Item, cx: number, cy: number, a: number): Item {
+  if (it.kind === "path") return mapPath(it, (x, y) => rotPt(x, y, cx, cy, a))
   if (it.kind === "image") {
     const c = rotPt(it.x + it.w / 2, it.y + it.h / 2, cx, cy, a)
     return { ...it, x: c.x - it.w / 2, y: c.y - it.h / 2, rot: (it.rot ?? 0) + a }
@@ -365,7 +455,7 @@ export function itemBounds(it: Item): Rect {
     if (p.x > maxX) maxX = p.x
     if (p.y > maxY) maxY = p.y
   }
-  const pad = it.kind === "image" ? 0 : it.size / 2
+  const pad = it.kind === "image" ? 0 : it.kind === "path" ? (it.stroke ? it.size / 2 : 0) : it.size / 2
   return { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 }
 }
 
@@ -424,6 +514,24 @@ export function hitItem(it: Item, x: number, y: number, tol: number): boolean {
   }
   const b = itemBounds(it)
   if (x < b.x - tol || y < b.y - tol || x > b.x + b.w + tol || y > b.y + b.h + tol) return false
+  if (it.kind === "path") {
+    const polys = outlinesOf(it)
+    if (it.fill) {
+      let inside = false
+      for (const pl of polys) if (pointInPoly(x, y, pl.pts)) inside = !inside
+      if (inside) return true
+    }
+    const rr = (it.stroke ? it.size / 2 : 0) + tol
+    for (const pl of polys) {
+      const n = pl.closed ? pl.pts.length : pl.pts.length - 1
+      for (let i = 0; i < n; i++) {
+        const a = pl.pts[i]
+        const c = pl.pts[(i + 1) % pl.pts.length]
+        if (distToSeg(x, y, a.x, a.y, c.x, c.y) <= rr) return true
+      }
+    }
+    return false
+  }
   const { pts, closed } = outlineOf(it)
   if (it.kind === "shape" && it.fill && closed && pointInPoly(x, y, pts)) return true
   const r = it.size / 2 + tol
@@ -440,10 +548,30 @@ export function hitItem(it: Item, x: number, y: number, tol: number): boolean {
 export function anchorsOf(it: Item): XY[] {
   if (it.kind === "stroke" && isVectorBrush(it.brush)) return it.points
   if (it.kind === "shape") return it.points
+  if (it.kind === "path") return it.subpaths.flatMap((sp) => sp.nodes)
   return []
 }
 
 export function setAnchor(it: Item, idx: number, x: number, y: number): Item {
+  if (it.kind === "path") {
+    let k = idx
+    return {
+      ...it,
+      subpaths: it.subpaths.map((sp) => {
+        if (k < 0 || k >= sp.nodes.length) {
+          k -= sp.nodes.length
+          return sp
+        }
+        const nodes = sp.nodes.slice()
+        const n = nodes[k]
+        const dx = x - n.x
+        const dy = y - n.y
+        nodes[k] = { x, y, ix: n.ix + dx, iy: n.iy + dy, ox: n.ox + dx, oy: n.oy + dy }
+        k = -1
+        return { ...sp, nodes }
+      }),
+    }
+  }
   if (it.kind === "stroke" || it.kind === "shape") {
     const points = it.points.slice()
     points[idx] = { ...points[idx], x, y }
@@ -453,11 +581,13 @@ export function setAnchor(it: Item, idx: number, x: number, y: number): Item {
 }
 
 export function translateItem(it: Item, dx: number, dy: number): Item {
+  if (it.kind === "path") return mapPath(it, (x, y) => ({ x: x + dx, y: y + dy }))
   if (it.kind === "image") return { ...it, x: it.x + dx, y: it.y + dy }
   return { ...it, points: it.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })) } as Item
 }
 
 export function scaleItem(it: Item, ox: number, oy: number, sx: number, sy: number): Item {
+  if (it.kind === "path") return mapPath(it, (x, y) => ({ x: ox + (x - ox) * sx, y: oy + (y - oy) * sy }))
   if (it.kind === "image" && it.rot) {
     const cx = ox + (it.x + it.w / 2 - ox) * sx
     const cy = oy + (it.y + it.h / 2 - oy) * sy
@@ -543,8 +673,8 @@ export function renderDoc(layers: Layer[], scale = 1, paper = true) {
   return c
 }
 
-/** Scanline flood fill on a flattened composite; returns a cropped colour bitmap. */
-export function floodFill(src: ImageData, sx: number, sy: number, color: string, tol: number) {
+/** Scanline flood fill on a flattened composite; returns the (1px dilated) region mask. */
+export function floodMask(src: ImageData, sx: number, sy: number, tol: number) {
   const { width: W, height: H, data } = src
   if (sx < 0 || sy < 0 || sx >= W || sy >= H) return null
   const j0 = (sy * W + sx) * 4
@@ -618,24 +748,125 @@ export function floodFill(src: ImageData, sx: number, sy: number, color: string,
     }
   }
   if (maxX < 0) return null
-  const w = maxX - minX + 1
-  const h = maxY - minY + 1
-  const canvas = document.createElement("canvas")
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!
-  const out = ctx.createImageData(w, h)
-  const { r, g, b } = hexToRgb(color)
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (!grown[(y + minY) * W + (x + minX)]) continue
-      const o = (y * w + x) * 4
-      out.data[o] = r
-      out.data[o + 1] = g
-      out.data[o + 2] = b
-      out.data[o + 3] = 255
+  return { grown, W, H, minX, minY, maxX, maxY }
+}
+
+/* ---------------- Live-paint: region mask → vector path ---------------- */
+
+function rdpOpen(pts: XY[], eps: number): XY[] {
+  if (pts.length < 3) return pts.slice()
+  const keep = new Uint8Array(pts.length)
+  keep[0] = 1
+  keep[pts.length - 1] = 1
+  const stack: [number, number][] = [[0, pts.length - 1]]
+  while (stack.length) {
+    const [a, b] = stack.pop()!
+    let maxD = 0
+    let idx = -1
+    for (let i = a + 1; i < b; i++) {
+      const d = distToSeg(pts[i].x, pts[i].y, pts[a].x, pts[a].y, pts[b].x, pts[b].y)
+      if (d > maxD) {
+        maxD = d
+        idx = i
+      }
+    }
+    if (maxD > eps && idx > 0) {
+      keep[idx] = 1
+      stack.push([a, idx], [idx, b])
     }
   }
-  ctx.putImageData(out, 0, 0)
-  return { canvas, x: minX, y: minY, w, h }
+  return pts.filter((_, i) => keep[i])
+}
+
+function rdpClosed(pts: XY[], eps: number): XY[] {
+  if (pts.length < 4) return pts.slice()
+  let far = 0
+  let fd = -1
+  for (let i = 1; i < pts.length; i++) {
+    const d = Math.hypot(pts[i].x - pts[0].x, pts[i].y - pts[0].y)
+    if (d > fd) {
+      fd = d
+      far = i
+    }
+  }
+  const a = rdpOpen(pts.slice(0, far + 1), eps)
+  const b = rdpOpen([...pts.slice(far), pts[0]], eps)
+  return [...a, ...b.slice(1, -1)]
+}
+
+function polyArea(pts: XY[]) {
+  let s = 0
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) s += (pts[j].x + pts[i].x) * (pts[j].y - pts[i].y)
+  return Math.abs(s / 2)
+}
+
+/** Polygon → bezier nodes: gentle turns become smooth anchors, sharp turns stay corners. */
+function smoothNodes(pts: XY[]): PathNode[] {
+  const n = pts.length
+  return pts.map((p, i) => {
+    const a = pts[(i - 1 + n) % n]
+    const b = pts[(i + 1) % n]
+    const v1x = p.x - a.x
+    const v1y = p.y - a.y
+    const v2x = b.x - p.x
+    const v2y = b.y - p.y
+    const l1 = Math.hypot(v1x, v1y) || 1
+    const l2 = Math.hypot(v2x, v2y) || 1
+    const cos = (v1x * v2x + v1y * v2y) / (l1 * l2)
+    if (cos < 0.62) return { x: p.x, y: p.y, ix: p.x, iy: p.y, ox: p.x, oy: p.y }
+    const tx = b.x - a.x
+    const ty = b.y - a.y
+    const tl = Math.hypot(tx, ty) || 1
+    const ux = tx / tl
+    const uy = ty / tl
+    return { x: p.x, y: p.y, ix: p.x - (ux * l1) / 3, iy: p.y - (uy * l1) / 3, ox: p.x + (ux * l2) / 3, oy: p.y + (uy * l2) / 3 }
+  })
+}
+
+/** Trace every boundary (outer edges + holes) of a region mask into closed bezier sub-paths. */
+export function traceMask(m: NonNullable<ReturnType<typeof floodMask>>): SubPath[] {
+  const { grown, W, H, minX, minY, maxX, maxY } = m
+  const at = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && grown[y * W + x] === 1
+  const VW = W + 1
+  const next = new Map<number, number[]>()
+  const add = (x0: number, y0: number, x1: number, y1: number) => {
+    const k = y0 * VW + x0
+    const arr = next.get(k)
+    if (arr) arr.push(y1 * VW + x1)
+    else next.set(k, [y1 * VW + x1])
+  }
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      if (!at(x, y)) continue
+      if (!at(x, y - 1)) add(x, y, x + 1, y)
+      if (!at(x + 1, y)) add(x + 1, y, x + 1, y + 1)
+      if (!at(x, y + 1)) add(x + 1, y + 1, x, y + 1)
+      if (!at(x - 1, y)) add(x, y + 1, x, y)
+    }
+  }
+  const out: SubPath[] = []
+  for (const start of Array.from(next.keys())) {
+    while (next.get(start)?.length) {
+      const loop: XY[] = []
+      let k = start
+      let guard = 0
+      do {
+        const arr = next.get(k)!
+        const v = arr.pop()!
+        if (!arr.length) next.delete(k)
+        loop.push({ x: k % VW, y: Math.floor(k / VW) })
+        k = v
+      } while (k !== start && next.has(k) && guard++ < 5e6)
+      if (loop.length < 4) continue
+      // edge midpoints remove the pixel staircase before simplifying
+      const mids = loop.map((p, i) => {
+        const q = loop[(i + 1) % loop.length]
+        return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }
+      })
+      const simple = rdpClosed(mids, 1.1)
+      if (simple.length < 3 || polyArea(simple) < 3) continue
+      out.push({ closed: true, nodes: smoothNodes(simple) })
+    }
+  }
+  return out
 }

@@ -136,12 +136,13 @@ function buildMenu() {
         { type: "separator" },
         item("Brush", "tool:brush", "B"),
         item("Eraser", "tool:eraser", "E"),
-        item("Paint Bucket", "tool:fill", "G"),
+        item("Live Paint Bucket", "tool:fill", "G"),
         item("Eyedropper", "tool:eyedropper", "I"),
         { type: "separator" },
         item("Line", "tool:line", "L"),
         item("Rectangle", "tool:rect", "U"),
         item("Ellipse", "tool:ellipse", "O"),
+        item("Pen", "tool:pen", "P"),
         { type: "separator" },
         item("Hand", "tool:hand", "H"),
         item("Zoom", "tool:zoom", "Z"),
@@ -156,7 +157,7 @@ function buildMenu() {
         item("Mono Liner — vector", "brush:vector-fixed", "4"),
       ],
     },
-    { label: "Layer", submenu: [item("New Layer", "newLayer")] },
+    { label: "Layer", submenu: [item("New Pencil Layer", "newPencilLayer"), item("New Vector Layer", "newVectorLayer")] },
     {
       label: "View",
       submenu: [

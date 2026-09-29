@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Copy, Eraser, Eye, EyeOff, Lock, Plus, Trash2, Unlock } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Eraser, Eye, EyeOff, Lock, PenTool, Pencil, Trash2, Unlock } from "lucide-react";
 import type { Studio } from "./useStudio";
 import { Panel, iconBtn } from "./Panel";
 import type { Layer } from "../../lib/art/types";
@@ -33,20 +33,23 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
       title="Layers"
       actions={
       <div className="flex items-center" data-oid="3a27a3af81" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
-          <button type="button" aria-label="New layer" className={iconBtn} onClick={studio.addLayer} data-oid="ceb86af31c" data-oid-classname-dynamic="true">
-            <Plus className="h-3.5 w-3.5" data-oid="3af61da8c8" />
+          <button type="button" aria-label="New pencil layer" title="New pencil layer — holds pencil strokes" className={iconBtn} onClick={() => studio.addLayer("pencil")} data-oid="ceb86af31c" data-oid-classname-dynamic="true">
+            <Pencil className="h-3.5 w-3.5" data-oid="3af61da8c8" />
           </button>
-          <button type="button" aria-label="Duplicate layer" className={iconBtn} onClick={() => active && studio.duplicateLayer(active.id)} data-oid="b5e2b69138" data-oid-classname-dynamic="true">
-            <Copy className="h-3.5 w-3.5" data-oid="0cdb2a51af" />
+          <button type="button" aria-label="New vector layer" title="New vector layer — holds vector strokes, shapes, pen paths and fills" className={iconBtn} onClick={() => studio.addLayer("vector")} data-oid="b5e2b69138" data-oid-classname-dynamic="true">
+            <PenTool className="h-3.5 w-3.5" data-oid="0cdb2a51af" />
           </button>
-          <button type="button" aria-label="Move layer up" className={iconBtn} disabled={activeIndex >= studio.layers.length - 1} onClick={() => active && studio.moveLayer(active.id, 1)} data-oid="593de826ad" data-oid-classname-dynamic="true">
-            <ChevronUp className="h-3.5 w-3.5" data-oid="13e32bff74" />
+          <button type="button" aria-label="Duplicate layer" className={iconBtn} onClick={() => active && studio.duplicateLayer(active.id)} data-oid="593de826ad" data-oid-classname-dynamic="true">
+            <Copy className="h-3.5 w-3.5" data-oid="13e32bff74" />
           </button>
-          <button type="button" aria-label="Move layer down" className={iconBtn} disabled={activeIndex <= 0} onClick={() => active && studio.moveLayer(active.id, -1)} data-oid="244468e319" data-oid-classname-dynamic="true">
-            <ChevronDown className="h-3.5 w-3.5" data-oid="3c7dc04db4" />
+          <button type="button" aria-label="Move layer up" className={iconBtn} disabled={activeIndex >= studio.layers.length - 1} onClick={() => active && studio.moveLayer(active.id, 1)} data-oid="244468e319" data-oid-classname-dynamic="true">
+            <ChevronUp className="h-3.5 w-3.5" data-oid="3c7dc04db4" />
           </button>
-          <button type="button" aria-label="Delete layer" className={iconBtn} disabled={studio.layers.length <= 1} onClick={() => active && studio.deleteLayer(active.id)} data-oid="c00f092846" data-oid-classname-dynamic="true">
-            <Trash2 className="h-3.5 w-3.5" data-oid="a7b8a146b9" />
+          <button type="button" aria-label="Move layer down" className={iconBtn} disabled={activeIndex <= 0} onClick={() => active && studio.moveLayer(active.id, -1)} data-oid="c00f092846" data-oid-classname-dynamic="true">
+            <ChevronDown className="h-3.5 w-3.5" data-oid="a7b8a146b9" />
+          </button>
+          <button type="button" aria-label="Delete layer" className={iconBtn} disabled={studio.layers.length <= 1} onClick={() => active && studio.deleteLayer(active.id)} data-oid="6c92987ca5" data-oid-classname-dynamic="true">
+            <Trash2 className="h-3.5 w-3.5" data-oid="0ceda53918" />
           </button>
         </div>
       }>
@@ -145,8 +148,8 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
                   {layer.name}
                 </p>
             }
-              <p className="type-caption text-muted-foreground" data-oid="58f576afbc" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:5b9c7a56383a|text|expression:4900173db67f|text|expression:f3269a005485">
-                {layer.items.length} OBJ · {Math.round(layer.opacity * 100)}%{layer.blend === "multiply" ? " · MULT" : layer.blend === "screen" ? " · SCRN" : ""}
+              <p className="type-caption text-muted-foreground" data-oid="58f576afbc" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:5332937ed06d|text|expression:5b9c7a56383a|text|expression:4900173db67f|text|expression:f3269a005485">
+                {layer.type === "pencil" ? "PENCIL" : "VECTOR"} · {layer.items.length} OBJ · {Math.round(layer.opacity * 100)}%{layer.blend === "multiply" ? " · MULT" : layer.blend === "screen" ? " · SCRN" : ""}
               </p>
             </div>
             <button

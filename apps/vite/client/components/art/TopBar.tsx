@@ -65,7 +65,7 @@ function ToolOptions({ studio }: {studio: Studio;}) {
   if (t === "eraser") {
     return <Range label="Eraser size" value={studio.eraserSize} min={1} max={200} format={(v) => `${v}px`} onChange={studio.setEraserSize} />;
   }
-  if (t === "line" || t === "rect" || t === "ellipse") {
+  if (t === "line" || t === "rect" || t === "ellipse" || t === "pen") {
     return (
       <div className="flex items-center gap-ds-lg" data-oid="537405d26c" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-text-editable="false">
         <Range label="Stroke" value={studio.shapeStroke} min={0} max={60} format={(v) => `${v}px`} onChange={studio.setShapeStroke} />
@@ -75,17 +75,22 @@ function ToolOptions({ studio }: {studio: Studio;}) {
             Fill with secondary colour
           </label>
         }
-        <p className="type-caption text-muted-foreground" data-oid="4f56fef441">SHIFT constrains</p>
+        <p className="type-caption text-muted-foreground" data-oid="4f56fef441">{t === "pen" ? "CLICK CORNER · DRAG CURVE · CLICK START TO CLOSE · ENTER FINISHES · ⌫ UNDOES POINT" : "SHIFT constrains"}</p>
       </div>);
 
   }
   if (t === "fill") {
-    return <Range label="Tolerance" value={studio.fillTolerance} min={0} max={255} format={(v) => `${v}`} onChange={studio.setFillTolerance} />;
+    return (
+      <div className="flex items-center gap-ds-lg" data-oid="44fb5545d4" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
+        <Range label="Tolerance" value={studio.fillTolerance} min={0} max={255} format={(v) => `${v}`} onChange={studio.setFillTolerance} />
+        <p className="type-caption text-muted-foreground" data-oid="6b20576528">LIVE PAINT · EACH CLICK MAKES A VECTOR SHAPE ON A VECTOR LAYER</p>
+      </div>);
+
   }
   if (t === "select" || t === "direct" || t === "move" || t === "lasso" || t === "transform") {
     return (
       <div className="flex items-center gap-ds-sm" data-oid="ea401170a0" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
-        <p className="type-caption text-muted-foreground" data-oid="6b20576528">
+        <p className="type-caption text-muted-foreground" data-oid="d702681c17">
           <output className="text-accent" data-oid="f0e5a67eba">{studio.selection.length}</output> SELECTED
         </p>
         <button type="button" className={barBtn} onClick={studio.selectAll} data-oid="b053a94375" data-oid-classname-dynamic="true">

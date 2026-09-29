@@ -13,6 +13,7 @@ export type ToolId =
   | "line"
   | "rect"
   | "ellipse"
+  | "pen"
   | "hand"
   | "zoom"
 
@@ -62,7 +63,45 @@ export interface ImageItem {
   canvas: HTMLCanvasElement
 }
 
-export type Item = StrokeItem | EraseItem | ShapeItem | ImageItem
+/** Bezier anchor with absolute in/out handle positions (handle === anchor means a corner). */
+export interface PathNode {
+  x: number
+  y: number
+  ix: number
+  iy: number
+  ox: number
+  oy: number
+}
+
+export interface SubPath {
+  nodes: PathNode[]
+  closed: boolean
+}
+
+/** Illustrator-style vector path: pen-tool paths and live-paint bucket fills. */
+export interface PathItem {
+  id: string
+  kind: "path"
+  subpaths: SubPath[]
+  stroke: string | null
+  size: number
+  fill: string | null
+  opacity: number
+  evenOdd?: boolean
+}
+
+export type Item = StrokeItem | EraseItem | ShapeItem | ImageItem | PathItem
+
+export type LayerType = "pencil" | "vector"
+
+/** Which layer type a new item belongs on. Eraser marks go on whatever layer is active. */
+export function layerTypeFor(it: Item): LayerType | null {
+  if (it.kind === "erase") return null
+  if (it.kind === "stroke") return it.brush === "pencil-pressure" || it.brush === "pencil-fixed" ? "pencil" : "vector"
+  return "vector"
+}
+
+export const cornerNode = (x: number, y: number): PathNode => ({ x, y, ix: x, iy: y, ox: x, oy: y })
 
 export type BlendMode = "normal" | "multiply" | "screen"
 
@@ -76,6 +115,7 @@ export interface Layer {
   locked: boolean
   opacity: number
   blend?: BlendMode
+  type: LayerType
   items: Item[]
 }
 

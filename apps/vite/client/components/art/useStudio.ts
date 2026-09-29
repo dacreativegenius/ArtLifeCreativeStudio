@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Layer, type ToolId } from "../../lib/art/types"
+import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Layer, type LayerType, type ToolId } from "../../lib/art/types"
 import { renderDoc, translateItem } from "../../lib/art/render"
 import { buildSVG, parseDTM, safeName, saveFile, serializeDTM, type SaveResult } from "../../lib/art/fileio"
 import { desktop } from "../../lib/art/desktop"
@@ -8,6 +8,8 @@ export interface View {
   x: number
   y: number
   zoom: number
+  /** Canvas view rotation in radians (touch rotate). Screen = (x, y) + R(rot) · zoom · doc. */
+  rot: number
 }
 
 const DEFAULT_SWATCHES = [
@@ -25,14 +27,14 @@ const DEFAULT_BRUSHES: Record<BrushId, BrushSettings> = {
   "vector-fixed": { size: 6, opacity: 1 },
 }
 
-function makeLayer(name: string, id = uid("L")): Layer {
-  return { id, name, visible: true, locked: false, opacity: 1, items: [] }
+function makeLayer(name: string, type: LayerType, id = uid("L")): Layer {
+  return { id, name, type, visible: true, locked: false, opacity: 1, blend: "normal", items: [] }
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
 export function useStudio() {
-  const [layers, setLayers] = useState<Layer[]>(() => [makeLayer("Sketch", "layer-sketch"), makeLayer("Ink", "layer-ink")])
+  const [layers, setLayers] = useState<Layer[]>(() => [makeLayer("Sketch", "pencil", "layer-sketch"), makeLayer("Ink", "vector", "layer-ink")])
   const [activeLayerId, setActiveLayerId] = useState("layer-ink")
   const [tool, setTool] = useState<ToolId>("brush")
   const [brushId, setBrushId] = useState<BrushId>("pencil-pressure")
@@ -47,7 +49,7 @@ export function useStudio() {
   const [secondary, setSecondary] = useState("#ff7a1a")
   const [swatches, setSwatches] = useState<string[]>(DEFAULT_SWATCHES)
   const [selection, setSelection] = useState<string[]>([])
-  const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 })
+  const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1, rot: 0 })
   const [fitNonce, setFitNonce] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
   const [docSize, setDocSizeState] = useState({ w: DOC_W, h: DOC_H })
@@ -105,8 +107,39 @@ export function useStudio() {
 
   const activeLayer = layers.find((l) => l.id === activeLayerId) ?? layers[layers.length - 1]
 
-  const addLayer = () => {
-    const l = makeLayer(`Layer ${layerCount.current++}`)
+  /**
+   * Route new artwork to a layer of the right type (pencil strokes → pencil layer,
+   * vector strokes / shapes / pen paths / fills → vector layer). Uses the active layer
+   * when it matches, else the nearest matching layer, else creates one above.
+   */
+  const ensureLayer = (type: LayerType): string => {
+    const ls = layersRef.current
+    if (activeLayer && activeLayer.type === type) return activeLayer.id
+    const idx = ls.findIndex((l) => l.id === activeLayer?.id)
+    for (let d = 1; d < ls.length; d++) {
+      for (const j of [idx + d, idx - d]) {
+        const l = ls[j]
+        if (l && l.type === type && l.visible && !l.locked) {
+          setActiveLayerId(l.id)
+          flash(`Drawing on ${type} layer “${l.name}”`)
+          return l.id
+        }
+      }
+    }
+    const l = makeLayer(`${type === "pencil" ? "Pencil" : "Vector"} ${layerCount.current++}`, type)
+    commit((prev) => {
+      const i = prev.findIndex((x) => x.id === activeLayer?.id)
+      const next = [...prev]
+      next.splice(i + 1, 0, l)
+      return next
+    })
+    setActiveLayerId(l.id)
+    flash(`New ${type} layer “${l.name}”`)
+    return l.id
+  }
+
+  const addLayer = (type: LayerType = activeLayer?.type ?? "vector") => {
+    const l = makeLayer(`${type === "pencil" ? "Pencil" : "Vector"} ${layerCount.current++}`, type)
     commit((prev) => {
       const idx = prev.findIndex((x) => x.id === activeLayerId)
       const next = [...prev]
@@ -188,8 +221,8 @@ export function useStudio() {
 
   const newDocument = (w: number, h: number, name = "Untitled") => {
     applyDocSize(w, h)
-    const ink = makeLayer("Ink")
-    setLayers([makeLayer("Sketch"), ink])
+    const ink = makeLayer("Ink", "vector")
+    setLayers([makeLayer("Sketch", "pencil"), ink])
     setActiveLayerId(ink.id)
     layerCount.current = 3
     setSelection([])
@@ -275,7 +308,7 @@ export function useStudio() {
       const nz = clamp(v.zoom * f, 0.1, 16)
       const cx = w / 2
       const cy = h / 2
-      return { zoom: nz, x: cx - (cx - v.x) * (nz / v.zoom), y: cy - (cy - v.y) * (nz / v.zoom) }
+      return { ...v, zoom: nz, x: cx - (cx - v.x) * (nz / v.zoom), y: cy - (cy - v.y) * (nz / v.zoom) }
     })
   }
 
@@ -356,6 +389,7 @@ export function useStudio() {
     canUndo: past.current.length > 0,
     canRedo: future.current.length > 0,
     addLayer,
+    ensureLayer,
     deleteLayer,
     duplicateLayer,
     moveLayer,
@@ -383,7 +417,7 @@ export function useStudio() {
 
   useEffect(() => {
     const TOOL_KEYS: Record<string, ToolId> = {
-      v: "select", a: "direct", m: "move", t: "transform", q: "lasso", b: "brush", e: "eraser", g: "fill",
+      p: "pen", v: "select", a: "direct", m: "move", t: "transform", q: "lasso", b: "brush", e: "eraser", g: "fill",
       i: "eyedropper", l: "line", u: "rect", o: "ellipse", h: "hand", z: "zoom",
     }
     const onKey = (e: KeyboardEvent) => {
@@ -496,6 +530,8 @@ export function useStudio() {
         case "delete": return s.deleteSelection()
         case "swap": return s.swapColors()
         case "newLayer": return s.addLayer()
+        case "newPencilLayer": return s.addLayer("pencil")
+        case "newVectorLayer": return s.addLayer("vector")
         case "zoomIn": return s.zoomBy(1.25)
         case "zoomOut": return s.zoomBy(0.8)
         case "fit": return s.requestFit()

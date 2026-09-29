@@ -1,14 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import type { Studio } from "./useStudio";
-import { DOC_H, DOC_W, blendOp, uid, type Item, type Rect, type Layer, type Pt, type ShapeItem } from "../../lib/art/types";
+import type { Studio, View } from "./useStudio";
+import {
+  DOC_H,
+  DOC_W,
+  blendOp,
+  cornerNode,
+  uid,
+  type Item,
+  type Layer,
+  type LayerType,
+  type PathItem,
+  type Pt,
+  type Rect,
+  type ShapeItem } from
+"../../lib/art/types";
 import {
   anchorsOf,
   drawItem,
-  floodFill,
+  floodMask,
   hitItem,
   isVectorBrush,
   itemBounds,
   outlineOf,
+  outlinesOf,
   pointInPoly,
   rectsIntersect,
   renderDoc,
@@ -17,6 +31,7 @@ import {
   scaleItem,
   setAnchor,
   simplify,
+  traceMask,
   translateItem,
   unionBounds,
   type XY } from
@@ -32,11 +47,15 @@ type Drag =
 {type: "move";lx: number;ly: number;ids: Set<string>;moved: boolean;} |
 {type: "scale";ax: number;ay: number;hx: number;hy: number;orig: Map<string, Item>;moved: boolean;} |
 {type: "anchor";id: string;idx: number;orig: Item;moved: boolean;} |
+{type: "handle";id: string;sub: number;idx: number;which: "in" | "out";orig: PathItem;moved: boolean;} |
 {type: "sample";} |
+{type: "pen";} |
 {type: "rotate";cx: number;cy: number;a0: number;angle: number;box: Rect;orig: Map<string, Item>;moved: boolean;};
 
-const ROT_OFFSET = 28;
+type Pen = {item: PathItem;layerId: string;closing: boolean;};
+type Gesture = {m0x: number;m0y: number;d0: number;a0: number;v0: View;};
 
+const ROT_OFFSET = 28;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 function replaceItems(ls: Layer[], map: Map<string, Item>): Layer[] {
@@ -103,7 +122,12 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   S.current = studio;
   const layerCanvases = useRef(new Map<string, HTMLCanvasElement>());
   const live = useRef<Item | null>(null);
+  const liveLayer = useRef<string>("");
+  const pen = useRef<Pen | null>(null);
+  const penHover = useRef<XY | null>(null);
   const drag = useRef<Drag | null>(null);
+  const touches = useRef(new Map<number, XY>());
+  const gesture = useRef<Gesture | null>(null);
   const pointer = useRef({ sx: 0, sy: 0, inside: false });
   const space = useRef(false);
   const size = useRef({ w: 0, h: 0, dpr: 1 });
@@ -118,17 +142,50 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
 
   dirty.current = true;
 
+  /* ---------- view transform: screen = (x, y) + R(rot) · zoom · doc ---------- */
+  const toScreen = (x: number, y: number) => {
+    const v = S.current.view;
+    const c = Math.cos(v.rot);
+    const s = Math.sin(v.rot);
+    const X = x * v.zoom;
+    const Y = y * v.zoom;
+    return { x: v.x + X * c - Y * s, y: v.y + X * s + Y * c };
+  };
+
+  const toDoc = (sx: number, sy: number) => {
+    const v = S.current.view;
+    const c = Math.cos(v.rot);
+    const s = Math.sin(v.rot);
+    const dx = sx - v.x;
+    const dy = sy - v.y;
+    return { x: (dx * c + dy * s) / v.zoom, y: (-dx * s + dy * c) / v.zoom };
+  };
+
   const fit = () => {
     const { w, h } = size.current;
     if (!w || !h) return;
     const zoom = Math.min((w - 96) / DOC_W, (h - 96) / DOC_H);
-    S.current.setView({ zoom, x: (w - DOC_W * zoom) / 2, y: (h - DOC_H * zoom) / 2 });
+    S.current.setView({ zoom, x: (w - DOC_W * zoom) / 2, y: (h - DOC_H * zoom) / 2, rot: 0 });
   };
 
   const zoomAt = (sx: number, sy: number, f: number) => {
     S.current.setView((v) => {
       const nz = clamp(v.zoom * f, 0.1, 16);
-      return { zoom: nz, x: sx - (sx - v.x) * (nz / v.zoom), y: sy - (sy - v.y) * (nz / v.zoom) };
+      return { ...v, zoom: nz, x: sx - (sx - v.x) * (nz / v.zoom), y: sy - (sy - v.y) * (nz / v.zoom) };
+    });
+  };
+
+  const resetRotation = () => {
+    const { w, h } = size.current;
+    const cx = w / 2;
+    const cy = h / 2;
+    S.current.setView((v) => {
+      const d = -v.rot;
+      const c = Math.cos(d);
+      const s = Math.sin(d);
+      const tx = v.x - cx;
+      const ty = v.y - cy;
+      return { ...v, rot: 0, x: cx + tx * c - ty * s, y: cy + tx * s + ty * c };
     });
   };
 
@@ -136,9 +193,28 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const r = canvasRef.current!.getBoundingClientRect();
     const sx = clientX - r.left;
     const sy = clientY - r.top;
-    const v = S.current.view;
-    return { sx, sy, x: (sx - v.x) / v.zoom, y: (sy - v.y) / v.zoom };
+    const d = toDoc(sx, sy);
+    return { sx, sy, x: d.x, y: d.y };
   };
+
+  /* ---------- pen tool ---------- */
+  const penNodes = () => pen.current?.item.subpaths[0].nodes ?? [];
+
+  const commitPen = () => {
+    const p = pen.current;
+    pen.current = null;
+    penHover.current = null;
+    dirty.current = true;
+    if (!p || p.item.subpaths[0].nodes.length < 2) return;
+    if (!p.item.subpaths[0].closed) p.item.fill = null;
+    const item = p.item;
+    S.current.commit((ls) => ls.map((l) => l.id === p.layerId ? { ...l, items: [...l.items, item] } : l));
+  };
+
+  useEffect(() => {
+    if (studio.tool !== "pen" && pen.current) commitPen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studio.tool]);
 
   /* ---------- sizing ---------- */
   useEffect(() => {
@@ -169,7 +245,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studio.fitNonce]);
 
-  /* ---------- wheel + space ---------- */
+  /* ---------- wheel + keys ---------- */
   useEffect(() => {
     const canvas = canvasRef.current!;
     const onWheel = (e: WheelEvent) => {
@@ -188,11 +264,26 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
     };
     const down = (e: KeyboardEvent) => {
-      if (e.code === "Space" && !isField(e.target)) {
+      if (isField(e.target)) return;
+      if (e.code === "Space") {
         e.preventDefault();
         if (!space.current) {
           space.current = true;
           setSpaceDown(true);
+        }
+        return;
+      }
+      if (pen.current) {
+        if (e.key === "Enter" || e.key === "Escape") {
+          e.preventDefault();
+          commitPen();
+        } else if (e.key === "Backspace" || e.key === "Delete") {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          const nodes = penNodes();
+          nodes.pop();
+          if (!nodes.length) pen.current = null;
+          dirty.current = true;
         }
       }
     };
@@ -203,11 +294,11 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       }
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
-    window.addEventListener("keydown", down);
+    window.addEventListener("keydown", down, true);
     window.addEventListener("keyup", up);
     return () => {
       canvas.removeEventListener("wheel", onWheel);
-      window.removeEventListener("keydown", down);
+      window.removeEventListener("keydown", down, true);
       window.removeEventListener("keyup", up);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,18 +324,20 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const ctx = c.getContext("2d")!;
     const { dpr } = size.current;
     const st = S.current;
-    const { x: px, y: py, zoom } = st.view;
+    const { x: px, y: py, zoom, rot } = st.view;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
 
     // paper
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(rot);
     ctx.shadowColor = "rgba(0,0,0,0.5)";
     ctx.shadowBlur = 32;
     ctx.shadowOffsetY = 10;
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(px, py, DOC_W * zoom, DOC_H * zoom);
+    ctx.fillRect(0, 0, DOC_W * zoom, DOC_H * zoom);
     ctx.restore();
 
     // layers
@@ -262,13 +355,17 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       const l = lc.getContext("2d")!;
       l.setTransform(1, 0, 0, 1, 0, 0);
       l.clearRect(0, 0, lc.width, lc.height);
-      l.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * px, dpr * py);
+      l.setTransform(dpr, 0, 0, dpr, 0, 0);
+      l.translate(px, py);
+      l.rotate(rot);
+      l.scale(zoom, zoom);
       l.save();
       l.beginPath();
       l.rect(0, 0, DOC_W, DOC_H);
       l.clip();
       for (const it of layer.items) drawItem(l, it);
-      if (live.current && layer.id === st.activeLayerId) drawItem(l, live.current);
+      if (live.current && layer.id === liveLayer.current) drawItem(l, live.current);
+      if (pen.current && layer.id === pen.current.layerId) drawItem(l, pen.current.item);
       l.restore();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = layer.opacity;
@@ -293,25 +390,48 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       }
     }
 
-    // overlay
+    // overlay — drawn in the rotated view frame; X/Y map doc units to zoomed pixels
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(px, py);
+    ctx.rotate(rot);
     const acc = colors.current.accent;
-    const X = (x: number) => px + x * zoom;
-    const Y = (y: number) => py + y * zoom;
+    const X = (x: number) => x * zoom;
+    const Y = (y: number) => y * zoom;
     const selIds = new Set(st.selection);
+    ctx.lineWidth = 1;
     if (selIds.size) {
       const sel: Item[] = [];
       for (const l of st.layers) for (const it of l.items) if (selIds.has(it.id)) sel.push(it);
       ctx.strokeStyle = acc;
-      ctx.lineWidth = 1;
       for (const it of sel) {
         const anchors = st.tool === "direct" ? anchorsOf(it) : [];
         if (anchors.length) {
-          const { pts, closed } = outlineOf(it);
-          ctx.beginPath();
-          pts.forEach((p, i) => i ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y)));
-          if (closed) ctx.closePath();
-          ctx.stroke();
+          for (const { pts, closed } of outlinesOf(it)) {
+            ctx.beginPath();
+            pts.forEach((p, i) => i ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y)));
+            if (closed) ctx.closePath();
+            ctx.stroke();
+          }
+          if (it.kind === "path") {
+            for (const sp of it.subpaths) {
+              for (const n of sp.nodes) {
+                for (const [hx, hy] of [
+                [n.ix, n.iy],
+                [n.ox, n.oy]])
+                {
+                  if (hx === n.x && hy === n.y) continue;
+                  ctx.beginPath();
+                  ctx.moveTo(X(n.x), Y(n.y));
+                  ctx.lineTo(X(hx), Y(hy));
+                  ctx.stroke();
+                  ctx.beginPath();
+                  ctx.arc(X(hx), Y(hy), 3.5, 0, Math.PI * 2);
+                  ctx.fillStyle = acc;
+                  ctx.fill();
+                }
+              }
+            }
+          }
           anchors.forEach((a, i) => {
             const active = hoverAnchor.current?.id === it.id && hoverAnchor.current.idx === i;
             ctx.fillStyle = active ? acc : "#ffffff";
@@ -321,7 +441,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         } else {
           const b = itemBounds(it);
           ctx.setLineDash(sel.length > 1 ? [3, 3] : []);
-          ctx.strokeRect(Math.round(X(b.x)) + 0.5, Math.round(Y(b.y)) + 0.5, b.w * zoom, b.h * zoom);
+          ctx.strokeRect(X(b.x), Y(b.y), b.w * zoom, b.h * zoom);
           ctx.setLineDash([]);
         }
       }
@@ -367,7 +487,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         ctx.fillStyle = "#0f0f12";
         ctx.fillText(label, hx + 15, hy + 4);
       } else if (u && (st.tool === "transform" || st.tool === "select" || st.tool === "move")) {
-        ctx.strokeRect(Math.round(X(u.x)) + 0.5, Math.round(Y(u.y)) + 0.5, u.w * zoom, u.h * zoom);
+        ctx.strokeRect(X(u.x), Y(u.y), u.w * zoom, u.h * zoom);
         const tx = X(u.x + u.w / 2);
         const ty = Y(u.y);
         ctx.beginPath();
@@ -393,19 +513,59 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         ctx.arc(tx, ty - ROT_OFFSET, 2, 0, Math.PI * 2);
         ctx.fillStyle = acc;
         ctx.fill();
-      } else if (u && (st.tool === "select" || st.tool === "move")) {
-        ctx.strokeRect(Math.round(X(u.x)) + 0.5, Math.round(Y(u.y)) + 0.5, u.w * zoom, u.h * zoom);
-        if (st.tool === "select") {
-          for (const [hx, hy] of [
-          [u.x, u.y],
-          [u.x + u.w, u.y],
-          [u.x + u.w, u.y + u.h],
-          [u.x, u.y + u.h]])
-          {
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(X(hx) - 4, Y(hy) - 4, 8, 8);
-            ctx.strokeRect(X(hx) - 4, Y(hy) - 4, 8, 8);
-          }
+      }
+    }
+
+    // pen: anchors, handles and rubber-band preview
+    const pn = pen.current;
+    if (pn) {
+      const nodes = pn.item.subpaths[0].nodes;
+      ctx.strokeStyle = acc;
+      ctx.lineWidth = 1;
+      const last = nodes[nodes.length - 1];
+      const hov = penHover.current;
+      if (hov && last && drag.current?.type !== "pen") {
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(X(last.x), Y(last.y));
+        ctx.bezierCurveTo(X(last.ox), Y(last.oy), X(hov.x), Y(hov.y), X(hov.x), Y(hov.y));
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.beginPath();
+      tracePathScaled(ctx, nodes, pn.item.subpaths[0].closed, zoom);
+      ctx.stroke();
+      const shown = pn.closing ? [nodes[0], last] : [last];
+      for (const n of shown) {
+        if (!n) continue;
+        for (const [hx, hy] of [
+        [n.ix, n.iy],
+        [n.ox, n.oy]])
+        {
+          if (hx === n.x && hy === n.y) continue;
+          ctx.beginPath();
+          ctx.moveTo(X(n.x), Y(n.y));
+          ctx.lineTo(X(hx), Y(hy));
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(X(hx), Y(hy), 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = acc;
+          ctx.fill();
+        }
+      }
+      nodes.forEach((n, i) => {
+        const isLast = i === nodes.length - 1;
+        ctx.fillStyle = isLast ? acc : "#ffffff";
+        ctx.fillRect(X(n.x) - 3.5, Y(n.y) - 3.5, 7, 7);
+        ctx.strokeRect(X(n.x) - 3.5, Y(n.y) - 3.5, 7, 7);
+      });
+      if (hov && nodes.length >= 2) {
+        const f = toScreen(nodes[0].x, nodes[0].y);
+        const h = toScreen(hov.x, hov.y);
+        if (Math.hypot(f.x - h.x, f.y - h.y) <= 9) {
+          ctx.beginPath();
+          ctx.arc(X(nodes[0].x), Y(nodes[0].y), 7, 0, Math.PI * 2);
+          ctx.stroke();
         }
       }
     }
@@ -418,7 +578,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       ctx.fillRect(X(x), Y(y), Math.abs(d.x1 - d.x0) * zoom, Math.abs(d.y1 - d.y0) * zoom);
       ctx.strokeStyle = acc;
       ctx.setLineDash([4, 3]);
-      ctx.strokeRect(X(x) + 0.5, Y(y) + 0.5, Math.abs(d.x1 - d.x0) * zoom, Math.abs(d.y1 - d.y0) * zoom);
+      ctx.strokeRect(X(x), Y(y), Math.abs(d.x1 - d.x0) * zoom, Math.abs(d.y1 - d.y0) * zoom);
       ctx.setLineDash([]);
     }
     if (d?.type === "lasso" && d.pts.length > 1) {
@@ -433,9 +593,10 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       ctx.setLineDash([]);
     }
 
-    // brush cursor
+    // cursors (screen space)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const pt = pointer.current;
-    if (pt.inside && !space.current && st.tool === "eyedropper") {
+    if (pt.inside && !space.current && !gesture.current && st.tool === "eyedropper") {
       ctx.beginPath();
       ctx.arc(pt.sx, pt.sy, 16, 0, Math.PI * 2);
       ctx.lineWidth = 8;
@@ -457,7 +618,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       ctx.lineTo(pt.sx, pt.sy + 5);
       ctx.stroke();
     }
-    if (pt.inside && !space.current && (st.tool === "brush" || st.tool === "eraser")) {
+    if (pt.inside && !space.current && !gesture.current && (st.tool === "brush" || st.tool === "eraser")) {
       const sz = st.tool === "eraser" ? st.eraserSize : st.currentBrush.size;
       const r = Math.max(1.5, sz * zoom / 2);
       ctx.beginPath();
@@ -509,10 +670,14 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     return out;
   };
 
+  const near = (x: number, y: number, sx: number, sy: number, r: number) => {
+    const p = toScreen(x, y);
+    return Math.hypot(p.x - sx, p.y - sy) <= r;
+  };
+
   const handleHit = (sx: number, sy: number) => {
     const u = unionBounds(selectedItems());
     if (!u) return null;
-    const { x: px, y: py, zoom } = S.current.view;
     const corners = [
     [u.x, u.y],
     [u.x + u.w, u.y],
@@ -521,7 +686,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
 
     for (let i = 0; i < 4; i++) {
       const [cx, cy] = corners[i];
-      if (Math.hypot(px + cx * zoom - sx, py + cy * zoom - sy) <= 7) {
+      if (near(cx, cy, sx, sy, 7)) {
         const [ax, ay] = corners[(i + 2) % 4];
         return { hx: cx, hy: cy, ax, ay };
       }
@@ -532,38 +697,112 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const rotHit = (sx: number, sy: number) => {
     const u = unionBounds(selectedItems());
     if (!u) return null;
-    const { x: px, y: py, zoom } = S.current.view;
-    const hx = px + (u.x + u.w / 2) * zoom;
-    const hy = py + u.y * zoom - ROT_OFFSET;
+    const top = toScreen(u.x + u.w / 2, u.y);
+    const r = S.current.view.rot;
+    const hx = top.x + Math.sin(r) * ROT_OFFSET;
+    const hy = top.y - Math.cos(r) * ROT_OFFSET;
     if (Math.hypot(hx - sx, hy - sy) <= 9) return u;
     return null;
   };
 
   const anchorHit = (sx: number, sy: number) => {
-    const { x: px, y: py, zoom } = S.current.view;
     for (const it of selectedItems()) {
       const anchors = anchorsOf(it);
       for (let i = 0; i < anchors.length; i++) {
-        if (Math.hypot(px + anchors[i].x * zoom - sx, py + anchors[i].y * zoom - sy) <= 6) return { id: it.id, idx: i, orig: it };
+        if (near(anchors[i].x, anchors[i].y, sx, sy, 6)) return { id: it.id, idx: i, orig: it };
       }
     }
     return null;
   };
 
+  const bezierHandleHit = (sx: number, sy: number) => {
+    for (const it of selectedItems()) {
+      if (it.kind !== "path") continue;
+      for (let s = 0; s < it.subpaths.length; s++) {
+        const nodes = it.subpaths[s].nodes;
+        for (let i = 0; i < nodes.length; i++) {
+          const n = nodes[i];
+          if ((n.ox !== n.x || n.oy !== n.y) && near(n.ox, n.oy, sx, sy, 6)) return { id: it.id, sub: s, idx: i, which: "out" as const, orig: it };
+          if ((n.ix !== n.x || n.iy !== n.y) && near(n.ix, n.iy, sx, sy, 6)) return { id: it.id, sub: s, idx: i, which: "in" as const, orig: it };
+        }
+      }
+    }
+    return null;
+  };
+
+  const editableId = (id: string) => {
+    const st = S.current;
+    const layer = st.layers.find((l) => l.id === id);
+    if (!layer) return true; // just created by ensureLayer
+    if (layer.locked) return st.flash(`“${layer.name}” is locked`), false;
+    if (!layer.visible) return st.flash(`“${layer.name}” is hidden`), false;
+    return true;
+  };
+
+  const target = (type: LayerType | null) => {
+    const st = S.current;
+    const id = type ? st.ensureLayer(type) : st.activeLayerId;
+    return editableId(id) ? id : null;
+  };
+
   const doFill = (x: number, y: number) => {
     const st = S.current;
+    const layerId = target("vector");
+    if (!layerId) return;
     const doc = renderDoc(st.layers, 1, true);
     const img = doc.getContext("2d")!.getImageData(0, 0, DOC_W, DOC_H);
-    const res = floodFill(img, Math.floor(x), Math.floor(y), st.primary, st.fillTolerance);
-    if (!res) return;
-    const item: Item = { id: uid("f"), kind: "image", ...res };
-    const layerId = st.activeLayerId;
+    const mask = floodMask(img, Math.floor(x), Math.floor(y), st.fillTolerance);
+    if (!mask) return;
+    const subpaths = traceMask(mask);
+    if (!subpaths.length) return;
+    const item: PathItem = { id: uid("f"), kind: "path", subpaths, stroke: null, size: 0, fill: st.primary, opacity: 1, evenOdd: true };
     st.commit((ls) => ls.map((l) => l.id === layerId ? { ...l, items: [...l.items, item] } : l));
+    st.flash(`Live paint · filled shape with ${subpaths.length} path${subpaths.length === 1 ? "" : "s"}`);
   };
 
   const sample = (sx: number, sy: number) => {
     sampleReq.current = { sx, sy };
     dirty.current = true;
+  };
+
+  /* ---------- touch gestures: two fingers pinch-zoom + rotate + pan ---------- */
+  const gestureMetrics = () => {
+    const [a, b] = Array.from(touches.current.values());
+    return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), ang: Math.atan2(b.y - a.y, b.x - a.x) };
+  };
+
+  const startGesture = () => {
+    // a second finger cancels whatever the first finger started
+    if (drag.current?.type === "draw" || drag.current?.type === "shape") live.current = null;
+    if (drag.current?.type === "pen" && pen.current) {
+      const nodes = penNodes();
+      if (!pen.current.closing) nodes.pop();
+      pen.current.closing = false;
+      pen.current.item.subpaths[0].closed = false;
+      if (!nodes.length) pen.current = null;
+    }
+    drag.current = null;
+    setPanning(false);
+    const m = gestureMetrics();
+    gesture.current = { m0x: m.mx, m0y: m.my, d0: m.d, a0: m.ang, v0: { ...S.current.view } };
+    dirty.current = true;
+  };
+
+  const updateGesture = () => {
+    const g = gesture.current;
+    if (!g || touches.current.size < 2) return;
+    const m = gestureMetrics();
+    const zoom = clamp(g.v0.zoom * (m.d / g.d0), 0.1, 16);
+    const k = zoom / g.v0.zoom;
+    let rot = g.v0.rot + (m.ang - g.a0);
+    const snap = Math.round(rot / (Math.PI / 2)) * (Math.PI / 2);
+    if (Math.abs(rot - snap) < 0.07) rot = snap;
+    const delta = rot - g.v0.rot;
+    const c = Math.cos(delta);
+    const s = Math.sin(delta);
+    const tx = g.v0.x - g.m0x;
+    const ty = g.v0.y - g.m0y;
+    S.current.setView({ zoom, rot, x: m.mx + k * (tx * c - ty * s), y: m.my + k * (tx * s + ty * c) });
   };
 
   /* ---------- pointer handlers ---------- */
@@ -572,6 +811,13 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const st = S.current;
     e.currentTarget.setPointerCapture(e.pointerId);
     const { sx, sy, x, y } = locate(e.clientX, e.clientY);
+
+    if (e.pointerType === "touch") {
+      touches.current.set(e.pointerId, { x: sx, y: sy });
+      if (touches.current.size === 2) return startGesture();
+      if (touches.current.size > 2 || gesture.current) return;
+    }
+
     const zoom = st.view.zoom;
     if (e.button === 1 || space.current || st.tool === "hand") {
       drag.current = { type: "pan", sx, sy, vx: st.view.x, vy: st.view.y };
@@ -580,13 +826,6 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     }
     let tool = st.tool;
     if (e.altKey && (tool === "brush" || tool === "fill")) tool = "eyedropper";
-    const layer = st.layers.find((l) => l.id === st.activeLayerId);
-    const editable = () => {
-      if (!layer) return false;
-      if (layer.locked) return st.flash(`“${layer.name}” is locked`), false;
-      if (!layer.visible) return st.flash(`“${layer.name}” is hidden`), false;
-      return true;
-    };
     const tol = 5 / zoom;
     const tryHandles = () => {
       if (!st.selection.length) return false;
@@ -612,10 +851,24 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       if (!e.shiftKey) st.setSelection([]);
       drag.current = { type: "marquee", x0: x, y0: y, x1: x, y1: y, additive: e.shiftKey, base: e.shiftKey ? st.selection : [] };
     };
+    const pickOrMarquee = () => {
+      const hit = hitTop(st.layers, x, y, tol);
+      if (hit) {
+        let sel = st.selection;
+        const id = hit.item.id;
+        if (e.shiftKey) sel = sel.includes(id) ? sel.filter((i) => i !== id) : [...sel, id];else
+        if (!sel.includes(id)) sel = [id];
+        st.setSelection(sel);
+        st.setActiveLayerId(hit.layerId);
+        if (sel.includes(id)) drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false };
+      } else startMarquee();
+    };
 
     switch (tool) {
       case "brush":{
-          if (!editable()) return;
+          const layerId = target(isVectorBrush(st.brushId) ? "vector" : "pencil");
+          if (!layerId) return;
+          liveLayer.current = layerId;
           Object.assign(pressureState.current, { p: 0.3, lastT: e.timeStamp, lastX: sx, lastY: sy });
           const p = pressureFor(e.nativeEvent, sx, sy);
           const b = st.currentBrush;
@@ -633,7 +886,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           break;
         }
       case "eraser":{
-          if (!editable()) return;
+          const layerId = target(null);
+          if (!layerId) return;
+          liveLayer.current = layerId;
           live.current = { id: uid("e"), kind: "erase", size: st.eraserSize, points: [{ x, y, p: 1 }] };
           drag.current = { type: "draw" };
           break;
@@ -641,7 +896,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       case "line":
       case "rect":
       case "ellipse":{
-          if (!editable()) return;
+          const layerId = target("vector");
+          if (!layerId) return;
+          liveLayer.current = layerId;
           live.current = {
             id: uid("sh"),
             kind: "shape",
@@ -655,8 +912,42 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           drag.current = { type: "shape", x0: x, y0: y };
           break;
         }
+      case "pen":{
+          const pn = pen.current;
+          if (!pn) {
+            const layerId = target("vector");
+            if (!layerId) return;
+            pen.current = {
+              layerId,
+              closing: false,
+              item: {
+                id: uid("p"),
+                kind: "path",
+                subpaths: [{ closed: false, nodes: [cornerNode(x, y)] }],
+                stroke: st.shapeStroke > 0 ? st.primary : null,
+                size: st.shapeStroke,
+                fill: st.shapeFill ? st.secondary : null,
+                opacity: 1
+              }
+            };
+            if (!pen.current.item.stroke && !pen.current.item.fill) pen.current.item.stroke = st.primary, pen.current.item.size = 1;
+          } else {
+            const nodes = pn.item.subpaths[0].nodes;
+            const first = nodes[0];
+            const last = nodes[nodes.length - 1];
+            if (nodes.length >= 2 && near(first.x, first.y, sx, sy, 9)) {
+              pn.item.subpaths[0].closed = true;
+              pn.closing = true;
+            } else if (nodes.length >= 2 && near(last.x, last.y, sx, sy, 9)) {
+              commitPen();
+              break;
+            } else nodes.push(cornerNode(x, y));
+          }
+          drag.current = { type: "pen" };
+          break;
+        }
       case "fill":
-        if (editable()) doFill(x, y);
+        doFill(x, y);
         break;
       case "eyedropper":
         sample(sx, sy);
@@ -674,8 +965,10 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           if (st.selection.length) {
             drag.current = { type: "move", lx: x, ly: y, ids: new Set(st.selection), moved: false };
           } else {
-            if (!editable()) return;
-            drag.current = { type: "move", lx: x, ly: y, ids: new Set(layer!.items.map((i) => i.id)), moved: false };
+            const layerId = target(null);
+            const layer = st.layers.find((l) => l.id === layerId);
+            if (!layer) return;
+            drag.current = { type: "move", lx: x, ly: y, ids: new Set(layer.items.map((i) => i.id)), moved: false };
           }
           break;
         }
@@ -686,30 +979,12 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             drag.current = { type: "move", lx: x, ly: y, ids: new Set(st.selection), moved: false };
             break;
           }
-          const hit = hitTop(st.layers, x, y, tol);
-          if (hit) {
-            let sel = st.selection;
-            const id = hit.item.id;
-            if (e.shiftKey) sel = sel.includes(id) ? sel.filter((i) => i !== id) : [...sel, id];else
-            if (!sel.includes(id)) sel = [id];
-            st.setSelection(sel);
-            st.setActiveLayerId(hit.layerId);
-            if (sel.includes(id)) drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false };
-          } else startMarquee();
+          pickOrMarquee();
           break;
         }
       case "select":{
           if (tryHandles()) break;
-          const hit = hitTop(st.layers, x, y, tol);
-          if (hit) {
-            let sel = st.selection;
-            const id = hit.item.id;
-            if (e.shiftKey) sel = sel.includes(id) ? sel.filter((i) => i !== id) : [...sel, id];else
-            if (!sel.includes(id)) sel = [id];
-            st.setSelection(sel);
-            st.setActiveLayerId(hit.layerId);
-            if (sel.includes(id)) drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false };
-          } else startMarquee();
+          pickOrMarquee();
           break;
         }
       case "direct":{
@@ -717,6 +992,11 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           if (a) {
             drag.current = { type: "anchor", ...a, moved: false };
             hoverAnchor.current = { id: a.id, idx: a.idx };
+            break;
+          }
+          const bh = bezierHandleHit(sx, sy);
+          if (bh) {
+            drag.current = { type: "handle", ...bh, moved: false };
             break;
           }
           const hit = hitTop(st.layers, x, y, tol);
@@ -737,9 +1017,14 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const st = S.current;
     const { sx, sy, x, y } = locate(e.clientX, e.clientY);
     pointer.current = { sx, sy, inside: true };
-    const d = drag.current;
     dirty.current = true;
+    if (e.pointerType === "touch" && touches.current.has(e.pointerId)) {
+      touches.current.set(e.pointerId, { x: sx, y: sy });
+      if (gesture.current) return updateGesture();
+    }
+    const d = drag.current;
     let p = readout.p;
+    if (st.tool === "pen") penHover.current = { x, y };
     if (d) {
       switch (d.type) {
         case "pan":
@@ -756,6 +1041,40 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         case "shape":{
             const it = live.current;
             if (it && it.kind === "shape") it.points = shapePoints(it.shape, d.x0, d.y0, x, y, e.shiftKey);
+            break;
+          }
+        case "pen":{
+            const pn = pen.current;
+            if (!pn) break;
+            const nodes = pn.item.subpaths[0].nodes;
+            const n = pn.closing ? nodes[0] : nodes[nodes.length - 1];
+            if (near(n.x, n.y, sx, sy, 2)) {
+              n.ox = n.x;
+              n.oy = n.y;
+              n.ix = n.x;
+              n.iy = n.y;
+            } else {
+              n.ox = x;
+              n.oy = y;
+              n.ix = 2 * n.x - x;
+              n.iy = 2 * n.y - y;
+            }
+            break;
+          }
+        case "sample":
+          sample(sx, sy);
+          break;
+        case "rotate":{
+            if (!d.moved) {
+              st.snapshot();
+              d.moved = true;
+            }
+            let a = Math.atan2(y - d.cy, x - d.cx) - d.a0;
+            if (e.shiftKey) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12);
+            d.angle = a;
+            const map = new Map<string, Item>();
+            d.orig.forEach((it, id) => map.set(id, rotateItem(it, d.cx, d.cy, a)));
+            st.setLayers((ls) => replaceItems(ls, map));
             break;
           }
         case "marquee":
@@ -805,22 +1124,6 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             st.setLayers((ls) => replaceItems(ls, map));
             break;
           }
-        case "sample":
-          sample(sx, sy);
-          break;
-        case "rotate":{
-            if (!d.moved) {
-              st.snapshot();
-              d.moved = true;
-            }
-            let a = Math.atan2(y - d.cy, x - d.cx) - d.a0;
-            if (e.shiftKey) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12);
-            d.angle = a;
-            const map = new Map<string, Item>();
-            d.orig.forEach((it, id) => map.set(id, rotateItem(it, d.cx, d.cy, a)));
-            st.setLayers((ls) => replaceItems(ls, map));
-            break;
-          }
         case "anchor":{
             if (!d.moved) {
               st.snapshot();
@@ -828,6 +1131,46 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             }
             const next = setAnchor(d.orig, d.idx, x, y);
             st.setLayers((ls) => replaceItems(ls, new Map([[d.id, next]])));
+            break;
+          }
+        case "handle":{
+            if (!d.moved) {
+              st.snapshot();
+              d.moved = true;
+            }
+            const subpaths = d.orig.subpaths.map((sp, si) => {
+              if (si !== d.sub) return sp;
+              const nodes = sp.nodes.slice();
+              const n = { ...nodes[d.idx] };
+              const otherX = d.which === "out" ? n.ix : n.ox;
+              const otherY = d.which === "out" ? n.iy : n.oy;
+              const otherLen = Math.hypot(otherX - n.x, otherY - n.y);
+              if (d.which === "out") {
+                n.ox = x;
+                n.oy = y;
+              } else {
+                n.ix = x;
+                n.iy = y;
+              }
+              // keep smooth anchors smooth (Alt breaks the handles apart, like Illustrator)
+              if (!e.altKey && otherLen > 0) {
+                const vx = n.x - x;
+                const vy = n.y - y;
+                const vl = Math.hypot(vx, vy) || 1;
+                const mx = n.x + vx / vl * otherLen;
+                const my = n.y + vy / vl * otherLen;
+                if (d.which === "out") {
+                  n.ix = mx;
+                  n.iy = my;
+                } else {
+                  n.ox = mx;
+                  n.oy = my;
+                }
+              }
+              nodes[d.idx] = n;
+              return { ...sp, nodes };
+            });
+            st.setLayers((ls) => replaceItems(ls, new Map([[d.id, { ...d.orig, subpaths }]])));
             break;
           }
       }
@@ -838,13 +1181,27 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     setReadout({ x: Math.round(x), y: Math.round(y), p });
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === "touch") {
+      touches.current.delete(e.pointerId);
+      if (gesture.current) {
+        if (touches.current.size < 2) {
+          gesture.current = null;
+          dirty.current = true;
+        }
+        return;
+      }
+    }
     const d = drag.current;
     drag.current = null;
     setPanning(false);
     const st = S.current;
     dirty.current = true;
     if (!d) return;
+    if (d.type === "pen") {
+      if (pen.current?.closing) commitPen();
+      return;
+    }
     if (d.type === "draw" || d.type === "shape") {
       const it = live.current;
       live.current = null;
@@ -854,7 +1211,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         const b = itemBounds(it);
         if (b.w - it.size < 2 && b.h - it.size < 2) return;
       }
-      const layerId = st.activeLayerId;
+      const layerId = liveLayer.current;
       st.commit((ls) => ls.map((l) => l.id === layerId ? { ...l, items: [...l.items, it] } : l));
       return;
     }
@@ -897,12 +1254,15 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   "crosshair";
 
   const zoomPct = Math.round(studio.view.zoom * 100);
+  let rotDeg = Math.round(studio.view.rot * 180 / Math.PI) % 360;
+  if (rotDeg > 180) rotDeg -= 360;
+  if (rotDeg <= -180) rotDeg += 360;
 
   return (
-    <section className="relative flex min-w-0 flex-1 flex-col" data-oid="3b8427b834" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
+    <section className="relative flex min-w-0 flex-1 flex-col" data-oid="b1527df8cb" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
       <div
         ref={wrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="96ba0125af" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2ca8832980f0">
+        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:27d5e5fb4155">
         
         <canvas
           ref={canvasRef}
@@ -917,40 +1277,64 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           }}
           onPointerLeave={() => {
             pointer.current.inside = false;
+            penHover.current = null;
             dirty.current = true;
           }}
-          onContextMenu={(e) => e.preventDefault()} data-oid="28c3e7ab9e" data-oid-style-dynamic="cursor" />
+          onContextMenu={(e) => e.preventDefault()} data-oid="105a2c9a38" data-oid-style-dynamic="cursor" />
         
         {studio.message &&
-        <p className="pointer-events-none absolute left-1/2 top-ds-lg -translate-x-1/2 rounded-md border border-border bg-popover px-ds-md py-ds-xs text-label text-popover-foreground shadow-lg" data-oid="abb6119c62">
+        <p className="pointer-events-none absolute left-1/2 top-ds-lg -translate-x-1/2 rounded-md border border-border bg-popover px-ds-md py-ds-xs text-label text-popover-foreground shadow-lg" data-oid="70f59d95b1">
             {studio.message}
           </p>
         }
       </div>
-      <footer className="flex h-7 items-center gap-ds-lg border-t border-border bg-card px-ds-md type-caption text-muted-foreground" data-oid="617bc6b1a2">
-        <span data-oid="e0f2cc6e49">
-          X <output className="text-foreground" data-oid="b704c8c307">{readout.x}</output>
+      <footer className="flex h-7 items-center gap-ds-lg border-t border-border bg-card px-ds-md type-caption text-muted-foreground" data-oid="9c10260a07">
+        <span data-oid="88ce772826">
+          X <output className="text-foreground" data-oid="c52ba3516b">{readout.x}</output>
         </span>
-        <span data-oid="0082dce1f2">
-          Y <output className="text-foreground" data-oid="e1506abc96">{readout.y}</output>
+        <span data-oid="0a3907a55e">
+          Y <output className="text-foreground" data-oid="c49dd29b6e">{readout.y}</output>
         </span>
-        <span className="flex items-center gap-ds-xs" data-oid="304d5fdaf6">
+        <span className="flex items-center gap-ds-xs" data-oid="c046d7b826">
           PRESSURE
-          <span className="relative h-1.5 w-20 overflow-hidden rounded-full bg-secondary" data-oid="b9ed847aeb">
-            <span className="absolute inset-y-0 left-0 rounded-full bg-primary" style={{ width: `${Math.round(readout.p * 100)}%` }} data-oid="b2039cd2d1" data-oid-style-dynamic="width" />
+          <span className="relative h-1.5 w-20 overflow-hidden rounded-full bg-secondary" data-oid="3f4be740d7">
+            <span className="absolute inset-y-0 left-0 rounded-full bg-primary" style={{ width: `${Math.round(readout.p * 100)}%` }} data-oid="1740ceadac" data-oid-style-dynamic="width" />
           </span>
-          <output className="w-8 text-foreground" data-oid="21dc520657">{readout.p.toFixed(2)}</output>
+          <output className="w-8 text-foreground" data-oid="b16abc867e">{readout.p.toFixed(2)}</output>
         </span>
-        <span className="ml-auto" data-oid="c7e476513e" data-oid-text-editable="false" data-oid-text-source="expression:84185c51aefc|text|expression:4a498f96c710|text">
+        <span className="ml-auto" data-oid="223d254a31" data-oid-text-editable="false" data-oid-text-source="expression:84185c51aefc|text|expression:4a498f96c710|text">
           {studio.docSize.w} × {studio.docSize.h} px
         </span>
-        <span data-oid="31b74773bc">
-          LAYER <output className="text-foreground" data-oid="0c877c525d">{studio.activeLayer?.name}</output>
+        <span data-oid="685574e29d">
+          LAYER <output className="text-foreground" data-oid="9adbb5749d">{studio.activeLayer?.name}</output>{" "}
+          <output className="text-accent" data-oid="73ac3e42cf">{studio.activeLayer?.type === "pencil" ? "PENCIL" : "VECTOR"}</output>
         </span>
-        <span data-oid="baeb092fd6">
-          ZOOM <output className="text-primary" data-oid="5541489a7d" data-oid-text-editable="false" data-oid-text-source="expression:f6620f99d3e1|text">{zoomPct}%</output>
+        <button
+          type="button"
+          title="Reset canvas rotation"
+          disabled={rotDeg === 0}
+          onClick={resetRotation}
+          className="rounded-sm px-ds-xs hover:bg-secondary hover:text-foreground disabled:pointer-events-none" data-oid="43284909c5">
+          ROT <output className="text-foreground" data-oid="3d5f141eb3" data-oid-text-editable="false" data-oid-text-source="expression:0668200a5b50|text">{rotDeg}°</output>
+        </button>
+        <span data-oid="690de1081a">
+          ZOOM <output className="text-primary" data-oid="aa2c636cab" data-oid-text-editable="false" data-oid-text-source="expression:f6620f99d3e1|text">{zoomPct}%</output>
         </span>
       </footer>
     </section>);
 
+}
+
+/** Draw pen-in-progress outline in the zoomed (overlay) frame. */
+function tracePathScaled(ctx: CanvasRenderingContext2D, nodes: PathItem["subpaths"][number]["nodes"], closed: boolean, z: number) {
+  const n = nodes.length;
+  if (!n) return;
+  ctx.moveTo(nodes[0].x * z, nodes[0].y * z);
+  const segs = closed ? n : n - 1;
+  for (let i = 0; i < segs; i++) {
+    const a = nodes[i];
+    const b = nodes[(i + 1) % n];
+    ctx.bezierCurveTo(a.ox * z, a.oy * z, b.ix * z, b.iy * z, b.x * z, b.y * z);
+  }
+  if (closed) ctx.closePath();
 }

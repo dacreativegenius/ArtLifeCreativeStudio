@@ -9,6 +9,7 @@ import {
   MousePointer2,
   Move,
   PaintBucket,
+  PenTool,
   Pipette,
   RotateCw,
   SquareDashed,
@@ -28,11 +29,12 @@ const TOOLS: {id: ToolId;label: string;key: string;icon: LucideIcon;group: numbe
 { id: "lasso", label: "Freeform Select", key: "Q", icon: Lasso, group: 0 },
 { id: "brush", label: "Brush", key: "B", icon: Brush, group: 1 },
 { id: "eraser", label: "Eraser", key: "E", icon: Eraser, group: 1 },
-{ id: "fill", label: "Paint Bucket", key: "G", icon: PaintBucket, group: 1 },
+{ id: "fill", label: "Live Paint Bucket · vector fill", key: "G", icon: PaintBucket, group: 1 },
 { id: "eyedropper", label: "Eyedropper", key: "I", icon: Pipette, group: 1 },
 { id: "line", label: "Line", key: "L", icon: Slash, group: 2 },
 { id: "rect", label: "Rectangle", key: "U", icon: Square, group: 2 },
 { id: "ellipse", label: "Ellipse", key: "O", icon: Circle, group: 2 },
+{ id: "pen", label: "Pen · bezier paths", key: "P", icon: PenTool, group: 2 },
 { id: "hand", label: "Hand", key: "H", icon: Hand, group: 3 },
 { id: "zoom", label: "Zoom", key: "Z", icon: ZoomIn, group: 3 }];
 
