@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, FileImage, FilePlus2, FolderOpen, Maximize, Minus, PanelRight, Plus, Redo2, Save, Shapes, Trash2, Undo2 } from "lucide-react";
 import { isNativeApp } from "../../lib/art/native";
+import { isIOS, isStandalone } from "../../lib/art/pwa";
+import { InstallApp } from "./InstallApp";
 import type { Studio } from "./useStudio";
 import { desktop } from "../../lib/art/desktop";
 import { ArtLifeLogo } from "./ArtLifeLogo";
@@ -171,7 +173,7 @@ export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: 
           <h1 className="whitespace-nowrap text-heading font-bold leading-[1.1] tracking-[-0.02em] text-foreground" data-oid="13a9d052e2">
             Art Life <span className="font-medium text-muted-foreground" data-oid="9509dd1f61">Creative Studio</span>
           </h1>
-          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:7f38ba8b5718|text">{desktop ? "DESKTOP" : isNativeApp ? "ANDROID" : "WEB"} v1.0.1</span>
+          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:05834ca73811|text">{desktop ? "DESKTOP" : isNativeApp ? "ANDROID" : isStandalone() ? "MOBILE APP" : "WEB"} v1.0.1</span>
         </div>
       </div>
 
@@ -185,7 +187,7 @@ export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: 
         <input
           ref={studio.fileInputRef}
           type="file"
-          accept=".dtm"
+          accept={isIOS ? undefined : ".dtm"}
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -210,6 +212,7 @@ export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: 
       </div>
 
       <div className="ml-auto flex items-center gap-ds-xs md:ml-0" data-oid="20df5d0044">
+        <InstallApp />
         <button type="button" aria-label="Zoom out" className={barBtn} onClick={() => studio.zoomBy(0.8)} data-oid="4fa5a48533" data-oid-classname-dynamic="true">
           <Minus className="h-3.5 w-3.5" data-oid="f2cc8474c4" />
         </button>

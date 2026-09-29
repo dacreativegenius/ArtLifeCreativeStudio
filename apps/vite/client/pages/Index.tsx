@@ -10,9 +10,11 @@ import { BrushPanel } from "../components/art/BrushPanel";
 import { LayersPanel } from "../components/art/LayersPanel";
 import { NewProjectDialog } from "../components/art/NewProjectDialog";
 import { onAndroidBack } from "../lib/art/native";
+import { useAutosave } from "../components/art/useAutosave";
 
 export default function Index() {
   const studio = useStudio();
+  useAutosave(studio);
   // Phones: the colour / brush / layer panels live in a slide-out drawer. Desktop + tablets: always docked.
   const [panelsOpen, setPanelsOpen] = useState(false);
   const stateRef = useRef({ panelsOpen, newDialogOpen: studio.newDialogOpen, setNewDialogOpen: studio.setNewDialogOpen });
@@ -36,7 +38,7 @@ export default function Index() {
   );
 
   return (
-    <main className="flex h-dvh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] type-body text-foreground" data-oid="02f6af567e" data-oid-component-root="true">
+    <main className="flex h-dvh flex-col overflow-hidden overscroll-none bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] type-body text-foreground" data-oid="02f6af567e" data-oid-component-root="true">
       <TopBar studio={studio} panelsOpen={panelsOpen} onTogglePanels={() => setPanelsOpen((o) => !o)} />
       <div className="relative flex min-h-0 flex-1" data-oid="981cf0b93e" data-oid-text-editable="false">
         <Toolbar studio={studio} />
