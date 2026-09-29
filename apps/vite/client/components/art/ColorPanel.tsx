@@ -13,7 +13,10 @@ const SIDE = HALF * 2;
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 export function ColorPanel({ studio }: {studio: Studio;}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Callback-ref state: the wheel canvas is re-created whenever the panel is collapsed and
+  // re-opened, so it must be redrawn for every new element (not only when the hue changes).
+  const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
+  const [dprTick, setDprTick] = useState(0);
   const target = studio.colorTarget;
   const current = target === "stroke" ? studio.primary : studio.secondary;
   const [hsv, setHsv] = useState<HSV>(() => hexToHsv(current));
@@ -25,13 +28,29 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
     setHsv((prev) => {
       if (hsvToHex(prev) === current.toLowerCase()) return prev;
       const n = hexToHsv(current);
+      if (!Number.isFinite(n.h) || !Number.isFinite(n.s) || !Number.isFinite(n.v)) return prev;
       if (n.s === 0 || n.v === 0) n.h = prev.h;
       return n;
     });
   }, [current]);
 
+  // Redraw when the window moves between screens / zoom changes (devicePixelRatio) or regains focus.
   useEffect(() => {
-    const c = canvasRef.current;
+    const bump = () => setDprTick((t) => t + 1);
+    window.addEventListener("resize", bump);
+    window.addEventListener("focus", bump);
+    document.addEventListener("visibilitychange", bump);
+    return () => {
+      window.removeEventListener("resize", bump);
+      window.removeEventListener("focus", bump);
+      document.removeEventListener("visibilitychange", bump);
+    };
+  }, []);
+
+  const hue = Number.isFinite(hsv.h) ? hsv.h : 0;
+
+  useEffect(() => {
+    const c = canvasEl;
     if (!c) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     c.width = SIZE * dpr;
@@ -47,7 +66,7 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
       ctx.stroke();
     }
     const x0 = C - HALF;
-    ctx.fillStyle = `hsl(${hsv.h}, 100%, 50%)`;
+    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
     ctx.fillRect(x0, x0, SIDE, SIDE);
     const gw = ctx.createLinearGradient(x0, 0, x0 + SIDE, 0);
     gw.addColorStop(0, "rgba(255,255,255,1)");
@@ -59,7 +78,7 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
     gb.addColorStop(1, "rgba(0,0,0,1)");
     ctx.fillStyle = gb;
     ctx.fillRect(x0, x0, SIDE, SIDE);
-  }, [hsv.h]);
+  }, [hue, canvasEl, dprTick]);
 
   const apply = (n: HSV) => {
     setHsv(n);
@@ -117,7 +136,7 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
       <div className="flex flex-col items-center gap-ds-md" data-oid="d538ad3655" data-oid-text-editable="false" data-oid-text-source="element:div|element:div|element:label|expression:4cdb1b027ba1|element:div|element:dl">
         <div className="relative h-[216px] w-[216px]" data-oid="7ac676baf5">
           <canvas
-            ref={canvasRef}
+            ref={setCanvasEl}
             className="h-[216px] w-[216px] cursor-crosshair touch-none"
             onPointerDown={(e) => handle(e, true)}
             onPointerMove={(e) => mode.current && handle(e, false)}

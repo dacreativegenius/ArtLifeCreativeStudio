@@ -24,6 +24,8 @@ export interface Pt {
   x: number
   y: number
   p: number
+  /** Anchor Point tool: a sharp corner instead of a smooth curve through this point. */
+  corner?: boolean
 }
 
 export interface StrokeItem {

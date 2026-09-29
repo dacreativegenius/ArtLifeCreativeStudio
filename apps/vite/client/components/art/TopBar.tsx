@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, FileImage, FilePlus2, FolderOpen, Maximize, Minus, Plus, Redo2, Save, Shapes, Trash2, Undo2 } from "lucide-react";
 import type { Studio } from "./useStudio";
-import { BRUSHES } from "../../lib/art/types";
 import { desktop } from "../../lib/art/desktop";
 import { ArtLifeLogo } from "./ArtLifeLogo";
 
@@ -39,12 +38,8 @@ function Range({
 function ToolOptions({ studio }: {studio: Studio;}) {
   const t = studio.tool;
   if (t === "brush") {
-    const b = BRUSHES.find((x) => x.id === studio.brushId)!;
     return (
       <div className="flex items-center gap-ds-lg" data-oid="8d7add58d4" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
-        <p className="text-label font-semibold text-foreground" data-oid="2d7bf79e54" data-oid-text-editable="false" data-oid-text-source="expression:8e5a40619b22|element:span">
-          {b.name} <span className="type-caption font-normal text-muted-foreground" data-oid="dee38a1a9c" data-oid-text-editable="false" data-oid-text-source="expression:54f0250715f9|expression:cabdbe004262">{b.family.toUpperCase()}{b.pressure ? " · PRESSURE" : " · FIXED"}</span>
-        </p>
         <Range label="Size" value={studio.currentBrush.size} min={1} max={120} format={(v) => `${v}px`} onChange={(v) => studio.updateBrush({ size: v })} />
         <Range
           label="Opacity"
@@ -175,7 +170,7 @@ export function TopBar({ studio }: {studio: Studio;}) {
           <h1 className="whitespace-nowrap text-heading font-bold leading-[1.1] tracking-[-0.02em] text-foreground" data-oid="13a9d052e2">
             Art Life <span className="font-medium text-muted-foreground" data-oid="9509dd1f61">Creative Studio</span>
           </h1>
-          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:22fd92977b0f|text">{desktop ? "DESKTOP" : "WEB"} v1.0</span>
+          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:22fd92977b0f|text">{desktop ? "DESKTOP" : "WEB"} v1.0.1</span>
         </div>
       </div>
 

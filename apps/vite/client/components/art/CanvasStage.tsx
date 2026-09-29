@@ -38,15 +38,16 @@ import {
 "../../lib/art/render";
 import { readCssColor, rgbToHex } from "../../lib/art/color";
 import {
-  canEditAnchors,
-  deleteAnchor,
-  insertAnchor,
-  isCorner,
-  makeCorner,
-  makeSmoothAuto,
-  makeSmoothTo,
-  nearestSegment,
-  toPathItem } from
+  editModel,
+  modelDelete,
+  modelDragAnchor,
+  modelHalfWidth,
+  modelInsert,
+  modelNearest,
+  modelOutlines,
+  modelSubpaths,
+  modelToggle,
+  type EditModel } from
 "../../lib/art/pathEdit";
 
 const ANCHOR_TOOLS = new Set(["direct", "penAdd", "penDelete", "penConvert"]);
@@ -62,7 +63,7 @@ type Drag =
 {type: "scale";ax: number;ay: number;hx: number;hy: number;orig: Map<string, Item>;moved: boolean;} |
 {type: "anchor";id: string;idx: number;orig: Item;moved: boolean;} |
 {type: "handle";id: string;sub: number;idx: number;which: "in" | "out";orig: PathItem;moved: boolean;free?: boolean;} |
-{type: "convert";id: string;sub: number;idx: number;orig: PathItem;sx0: number;sy0: number;moved: boolean;} |
+{type: "convert";id: string;sub: number;idx: number;model: EditModel;sx0: number;sy0: number;moved: boolean;} |
 {type: "sample";} |
 {type: "pen";} |
 {type: "rotate";cx: number;cy: number;a0: number;angle: number;box: Rect;orig: Map<string, Item>;moved: boolean;};
@@ -423,7 +424,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       for (const l of st.layers) for (const it of l.items) if (selIds.has(it.id)) sel.push(it);
       ctx.strokeStyle = acc;
       for (const it of sel) {
-        const anchors = ANCHOR_TOOLS.has(st.tool) ? anchorsOf(it) : [];
+        const em = EDIT_TOOLS.has(st.tool) ? editModel(it) : null;
+        const anchors = em ? modelSubpaths(em).flatMap((s) => s.nodes) : ANCHOR_TOOLS.has(st.tool) ? anchorsOf(it) : [];
         if (anchors.length) {
           for (const { pts, closed } of outlinesOf(it)) {
             ctx.beginPath();
@@ -543,18 +545,18 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         hit = l.items.find((i) => i.id === he.id);
         if (hit) break;
       }
-      const hp = hit ? toPathItem(hit) : null;
-      if (hit && hp) {
+      const hm = hit ? editModel(hit) : null;
+      if (hit && hm) {
         ctx.strokeStyle = acc;
         ctx.lineWidth = 1;
         if (!selIds.has(hit.id)) {
-          for (const { pts, closed } of outlinesOf(hp)) {
+          for (const { pts, closed } of modelOutlines(hm)) {
             ctx.beginPath();
             pts.forEach((p, i) => i ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y)));
             if (closed) ctx.closePath();
             ctx.stroke();
           }
-          for (const sp of hp.subpaths) {
+          for (const sp of modelSubpaths(hm)) {
             for (const n of sp.nodes) {
               ctx.fillStyle = "#ffffff";
               ctx.fillRect(X(n.x) - 3.5, Y(n.y) - 3.5, 7, 7);
@@ -563,7 +565,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           }
         }
         if (he.node) {
-          const n = hp.subpaths[he.node.sub]?.nodes[he.node.idx];
+          const n = modelSubpaths(hm)[he.node.sub]?.nodes[he.node.idx];
           if (n) {
             ctx.fillStyle = st.tool === "penDelete" ? colors.current.primary : acc;
             ctx.fillRect(X(n.x) - 5, Y(n.y) - 5, 10, 10);
@@ -812,11 +814,11 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       if (!l.visible || l.locked) continue;
       for (let i = l.items.length - 1; i >= 0; i--) {
         const it = l.items[i];
-        if (it.hidden || !canEditAnchors(it)) continue;
-        const p = toPathItem(it)!;
-        const onAnchor = p.subpaths.some((sp) => sp.nodes.some((n) => Math.hypot(n.x - x, n.y - y) <= tol * 1.6));
-        const onLine = nearestSegment(p, x, y).dist <= tol + (p.stroke ? p.size / 2 : 0);
-        if (!onAnchor && !onLine && !(p.fill && hitItem(p, x, y, 0))) continue;
+        const m = editModel(it);
+        if (!m) continue;
+        const onAnchor = modelSubpaths(m).some((sp) => sp.nodes.some((n) => Math.hypot(n.x - x, n.y - y) <= tol * 1.6));
+        const onLine = modelNearest(m, x, y).dist <= tol + modelHalfWidth(m);
+        if (!onAnchor && !onLine && !(m.kind === "path" && m.item.fill && hitItem(m.item, x, y, 0))) continue;
         if (sel.has(it.id)) return { item: it, layerId: l.id };
         if (!fallback) fallback = { item: it, layerId: l.id };
       }
@@ -824,9 +826,10 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     return fallback;
   };
 
-  const nodeAtScreen = (p: PathItem, sx: number, sy: number) => {
-    for (let s = 0; s < p.subpaths.length; s++) {
-      const nodes = p.subpaths[s].nodes;
+  const nodeAtScreen = (m: EditModel, sx: number, sy: number) => {
+    const subs = modelSubpaths(m);
+    for (let s = 0; s < subs.length; s++) {
+      const nodes = subs[s].nodes;
       for (let i = 0; i < nodes.length; i++) if (near(nodes[i].x, nodes[i].y, sx, sy, 7)) return { sub: s, idx: i };
     }
     return null;
@@ -860,12 +863,12 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const st = S.current;
     const found = findEditable(x, y, 6 / st.view.zoom);
     if (!found) return hoverEdit.current = null;
-    const p = toPathItem(found.item)!;
-    const node = st.tool === "penAdd" ? null : nodeAtScreen(p, sx, sy);
+    const m = editModel(found.item)!;
+    const node = st.tool === "penAdd" ? null : nodeAtScreen(m, sx, sy);
     let add: XY | null = null;
-    if (st.tool === "penAdd" && !nodeAtScreen(p, sx, sy)) {
-      const seg = nearestSegment(p, x, y);
-      if (seg.sub >= 0 && seg.dist * st.view.zoom <= 8 + (p.stroke ? p.size * st.view.zoom / 2 : 0)) add = seg.pt;
+    if (st.tool === "penAdd" && !nodeAtScreen(m, sx, sy)) {
+      const seg = modelNearest(m, x, y);
+      if (seg.sub >= 0 && seg.dist * st.view.zoom <= 8 + modelHalfWidth(m) * st.view.zoom) add = seg.pt;
     }
     hoverEdit.current = { id: found.item.id, add, node };
   };
@@ -1093,7 +1096,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             // handles can sit away from the path, so check the selected paths' handles first
             let grabbed = false;
             for (const it of selectedItems()) {
-              const sp = toPathItem(it);
+              const em = editModel(it);
+              const sp = em?.kind === "path" ? em.item : null;
               const h = sp && handleAtScreen(sp, sx, sy);
               if (sp && h) {
                 drag.current = { type: "handle", id: it.id, ...h, orig: sp, moved: false, free: true };
@@ -1109,29 +1113,29 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             break;
           }
           const { item, layerId } = found;
-          const p = toPathItem(item)!;
+          const m = editModel(item)!;
           st.setSelection([item.id]);
           st.setActiveLayerId(layerId);
           if (tool === "penAdd") {
-            if (nodeAtScreen(p, sx, sy)) break;
-            const seg = nearestSegment(p, x, y);
-            if (seg.sub < 0 || seg.dist * zoom > 8 + (p.stroke ? p.size * zoom / 2 : 0)) break;
-            replaceWith(item.id, insertAnchor(p, seg.sub, seg.seg, seg.t));
+            if (nodeAtScreen(m, sx, sy)) break;
+            const seg = modelNearest(m, x, y);
+            if (seg.sub < 0 || seg.dist * zoom > 8 + modelHalfWidth(m) * zoom) break;
+            replaceWith(item.id, modelInsert(m, seg.sub, seg.seg, seg.t));
           } else if (tool === "penDelete") {
-            const nd = nodeAtScreen(p, sx, sy);
+            const nd = nodeAtScreen(m, sx, sy);
             if (!nd) break;
-            const next = deleteAnchor(p, nd.sub, nd.idx);
+            const next = modelDelete(m, nd.sub, nd.idx);
             replaceWith(item.id, next);
             if (!next) st.flash("Path removed — it had too few anchors left");
           } else {
-            const h = handleAtScreen(p, sx, sy);
-            if (h) {
-              drag.current = { type: "handle", id: item.id, ...h, orig: p, moved: false, free: true };
+            const h = m.kind === "path" ? handleAtScreen(m.item, sx, sy) : null;
+            if (h && m.kind === "path") {
+              drag.current = { type: "handle", id: item.id, ...h, orig: m.item, moved: false, free: true };
               break;
             }
-            const nd = nodeAtScreen(p, sx, sy);
+            const nd = nodeAtScreen(m, sx, sy);
             if (!nd) break;
-            drag.current = { type: "convert", id: item.id, ...nd, orig: p, sx0: sx, sy0: sy, moved: false };
+            drag.current = { type: "convert", id: item.id, ...nd, model: m, sx0: sx, sy0: sy, moved: false };
           }
           hoverEdit.current = null;
           break;
@@ -1260,7 +1264,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
               st.snapshot();
               d.moved = true;
             }
-            const next = makeSmoothTo(d.orig, d.sub, d.idx, x, y);
+            const next = modelDragAnchor(d.model, d.sub, d.idx, x, y);
             st.setLayers((ls) => replaceItems(ls, new Map([[d.id, next]])));
             break;
           }
@@ -1406,10 +1410,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     }
     if (d.type === "convert") {
       if (!d.moved) {
-        const n = d.orig.subpaths[d.sub].nodes[d.idx];
-        const next = isCorner(n) ? makeSmoothAuto(d.orig, d.sub, d.idx) : makeCorner(d.orig, d.sub, d.idx);
-        replaceWith(d.id, next);
-        st.flash(isCorner(n) ? "Smooth anchor" : "Corner anchor");
+        const res = modelToggle(d.model, d.sub, d.idx);
+        replaceWith(d.id, res.item);
+        st.flash(res.corner ? "Corner anchor" : "Smooth anchor");
       }
       return;
     }

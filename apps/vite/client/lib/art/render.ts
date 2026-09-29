@@ -34,10 +34,11 @@ export function catmull(points: Pt[]): Pt[] {
   if (points.length < 3) return points.slice()
   const out: Pt[] = []
   for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] ?? points[i]
     const p1 = points[i]
     const p2 = points[i + 1]
-    const p3 = points[i + 2] ?? p2
+    // corner anchors (Anchor Point tool) kill the tangent on that side → sharp point
+    const p0 = p1.corner ? p1 : points[i - 1] ?? p1
+    const p3 = p2.corner ? p2 : points[i + 2] ?? p2
     const len = Math.hypot(p2.x - p1.x, p2.y - p1.y)
     const steps = Math.max(1, Math.min(24, Math.ceil(len / 3)))
     for (let s = 0; s < steps; s++) {
@@ -73,7 +74,7 @@ function taperAt(d: number, total: number, len: number) {
 /* ---------------- Pencil (graphite grain stamps) ---------------- */
 
 function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem) {
-  const pts = s.points
+  const pts = catmull(s.points)
   if (!pts.length) return
   const pressure = s.brush === "pencil-pressure"
   const { lens, total } = cumulative(pts)
@@ -399,7 +400,7 @@ export function drawItem(ctx: CanvasRenderingContext2D, it: Item) {
 export function outlineOf(it: Item): { pts: XY[]; closed: boolean } {
   switch (it.kind) {
     case "stroke":
-      return { pts: isVectorBrush(it.brush) ? catmull(it.points) : it.points, closed: false }
+      return { pts: catmull(it.points), closed: false }
     case "erase":
       return { pts: it.points, closed: false }
     case "shape":

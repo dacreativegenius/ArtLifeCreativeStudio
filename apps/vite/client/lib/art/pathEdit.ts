@@ -1,4 +1,5 @@
-import type { Item, PathItem, PathNode, SubPath } from "./types"
+import type { Item, PathItem, PathNode, Pt, StrokeItem, SubPath } from "./types"
+import { catmull, outlinesOf, simplify } from "./render"
 
 type XY = { x: number; y: number }
 
@@ -31,28 +32,102 @@ export function toPathItem(it: Item): PathItem | null {
     })
     return { ...base, subpaths: [{ closed: true, nodes }] }
   }
-  if (it.kind === "stroke" && it.brush === "vector-fixed") {
-    // uniform Catmull-Rom (what the liner renders) → exact cubic bezier handles
-    const P = it.points
-    const nodes: PathNode[] = P.map((p1, i) => {
-      const p0 = P[i - 1] ?? p1
-      const p2 = P[i + 1] ?? p1
-      return { x: p1.x, y: p1.y, ox: p1.x + (p2.x - p0.x) / 6, oy: p1.y + (p2.y - p0.y) / 6, ix: p1.x - (p2.x - p0.x) / 6, iy: p1.y - (p2.y - p0.y) / 6 }
-    })
-    if (nodes.length) {
-      const a = nodes[0]
-      a.ix = a.x
-      a.iy = a.y
-      const z = nodes[nodes.length - 1]
-      z.ox = z.x
-      z.oy = z.y
-    }
-    return { id: it.id, kind: "path", stroke: it.color, size: it.size, fill: null, opacity: it.opacity, subpaths: [{ closed: false, nodes }] }
-  }
   return null
 }
 
-export const canEditAnchors = (it: Item) => toPathItem(it) !== null
+/* ---------------- unified anchor-editing model (paths, shapes AND brush strokes) ---------------- */
+
+export type EditModel =
+{kind: "path";item: PathItem;} |
+{kind: "stroke";item: StrokeItem;nodes: Pt[];};
+
+/** Editable anchors of a brush stroke. Vector strokes are already simplified; pencil strokes are simplified on demand. */
+export function strokeNodes(s: StrokeItem): Pt[] {
+  if (s.brush === "vector-pressure" || s.brush === "vector-fixed" || s.points.length <= 3) return s.points
+  return simplify(s.points, 1)
+}
+
+export function editModel(it: Item): EditModel | null {
+  if (it.hidden) return null
+  if (it.kind === "stroke") return { kind: "stroke", item: it, nodes: strokeNodes(it) }
+  const p = toPathItem(it)
+  return p ? { kind: "path", item: p } : null
+}
+
+export const canEditAnchors = (it: Item) => editModel(it) !== null
+
+/** Exact bezier equivalent of the Catmull-Rom curve strokes render with (honours corner anchors). */
+function strokeAsPath(nodes: Pt[]): PathItem {
+  const n = nodes.length
+  const out: PathNode[] = nodes.map((P, i) => {
+    const prev = nodes[i - 1]
+    const next = nodes[i + 1]
+    // outgoing segment i: p0 = corner ? self : prev
+    const p0 = P.corner || !prev ? P : prev
+    const o = next ? { x: P.x + (next.x - p0.x) / 6, y: P.y + (next.y - p0.y) / 6 } : { x: P.x, y: P.y }
+    // incoming segment i-1: p3 = corner ? self : next
+    const p3 = P.corner || !next ? P : next
+    const inn = prev ? { x: P.x - (p3.x - prev.x) / 6, y: P.y - (p3.y - prev.y) / 6 } : { x: P.x, y: P.y }
+    return { x: P.x, y: P.y, ix: inn.x, iy: inn.y, ox: o.x, oy: o.y }
+  })
+  if (n < 3) out.forEach((q) => Object.assign(q, { ix: q.x, iy: q.y, ox: q.x, oy: q.y }))
+  return { id: "tmp", kind: "path", stroke: "#000", size: 1, fill: null, opacity: 1, subpaths: [{ closed: false, nodes: out }] }
+}
+
+export function modelSubpaths(m: EditModel): {closed: boolean;nodes: {x: number;y: number;corner: boolean;}[];}[] {
+  if (m.kind === "path") return m.item.subpaths.map((sp) => ({ closed: sp.closed, nodes: sp.nodes.map((n) => ({ x: n.x, y: n.y, corner: isCorner(n) })) }))
+  return [{ closed: false, nodes: m.nodes.map((n) => ({ x: n.x, y: n.y, corner: !!n.corner })) }]
+}
+
+export function modelOutlines(m: EditModel) {
+  if (m.kind === "path") return outlinesOf(m.item)
+  return [{ pts: catmull(m.nodes) as XY[], closed: false }]
+}
+
+export const modelHalfWidth = (m: EditModel) => m.kind === "path" ? m.item.stroke ? m.item.size / 2 : 0 : m.item.size / 2
+
+export function modelNearest(m: EditModel, x: number, y: number) {
+  return nearestSegment(m.kind === "path" ? m.item : strokeAsPath(m.nodes), x, y)
+}
+
+/** Add Anchor Point. */
+export function modelInsert(m: EditModel, sub: number, seg: number, t: number): Item {
+  if (m.kind === "path") return insertAnchor(m.item, sub, seg, t)
+  const bp = strokeAsPath(m.nodes).subpaths[0].nodes
+  const a = bp[seg]
+  const b = bp[seg + 1]
+  if (!a || !b) return m.item
+  const q = bez(a, b, t)
+  const p = m.nodes[seg].p + (m.nodes[seg + 1].p - m.nodes[seg].p) * t
+  const points = m.nodes.slice()
+  points.splice(seg + 1, 0, { x: q.x, y: q.y, p })
+  return { ...m.item, points }
+}
+
+/** Delete Anchor Point. Returns null when the object should be removed. */
+export function modelDelete(m: EditModel, sub: number, idx: number): Item | null {
+  if (m.kind === "path") return deleteAnchor(m.item, sub, idx)
+  const points = m.nodes.filter((_, i) => i !== idx)
+  return points.length < 2 ? null : { ...m.item, points }
+}
+
+/** Anchor Point click: smooth ⇄ corner. */
+export function modelToggle(m: EditModel, sub: number, idx: number): {item: Item;corner: boolean;} {
+  if (m.kind === "path") {
+    const n = m.item.subpaths[sub].nodes[idx]
+    return isCorner(n) ? { item: makeSmoothAuto(m.item, sub, idx), corner: false } : { item: makeCorner(m.item, sub, idx), corner: true }
+  }
+  const corner = !m.nodes[idx].corner
+  const points = m.nodes.map((n, i) => i === idx ? { ...n, corner } : n)
+  return { item: { ...m.item, points }, corner }
+}
+
+/** Anchor Point drag: paths pull out symmetric handles; brush strokes reshape through the dragged point. */
+export function modelDragAnchor(m: EditModel, sub: number, idx: number, x: number, y: number): Item {
+  if (m.kind === "path") return makeSmoothTo(m.item, sub, idx, x, y)
+  const points = m.nodes.map((n, i) => i === idx ? { ...n, x, y, corner: false } : n)
+  return { ...m.item, points }
+}
 
 const corner = (x: number, y: number): PathNode => ({ x, y, ix: x, iy: y, ox: x, oy: y })
 
