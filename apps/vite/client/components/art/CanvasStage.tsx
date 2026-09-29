@@ -1473,7 +1473,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   if (rotDeg <= -180) rotDeg += 360;
 
   return (
-    <section className="relative flex min-w-0 flex-1 flex-col" data-oid="b1527df8cb" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
+    <section className="relative flex min-w-0 flex-1 flex-col" data-oid="b1527df8cb" data-oid-component-root="true">
       <div
         ref={wrapRef}
         className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e">

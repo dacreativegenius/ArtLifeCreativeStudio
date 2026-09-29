@@ -20,7 +20,7 @@ function LayerThumb({ layer }: {layer: Layer;}) {
     }, 120);
     return () => window.clearTimeout(id);
   }, [layer]);
-  return <canvas ref={ref} aria-hidden="true" className="h-[28px] w-[44px] shrink-0 rounded-sm border border-border bg-foreground" data-oid="7a0a1ae753" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-editable="true" />;
+  return <canvas ref={ref} aria-hidden="true" className="h-[28px] w-[44px] shrink-0 rounded-sm border border-border bg-foreground" data-oid="7a0a1ae753" data-oid-component-root="true" />;
 }
 
 function itemLabel(it: Item) {
@@ -70,7 +70,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
     <Panel
       title="Layers"
       actions={
-      <div className="flex items-center" data-oid="3a27a3af81" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
+      <div className="flex items-center" data-oid="3a27a3af81" data-oid-component-root="true">
           <button type="button" aria-label="New pencil layer" title="New pencil layer — holds pencil strokes" className={iconBtn} onClick={() => studio.addLayer("pencil")} data-oid="ceb86af31c" data-oid-classname-dynamic="true">
             <Pencil className="h-3.5 w-3.5" data-oid="3af61da8c8" />
           </button>
@@ -150,7 +150,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
             aria-selected={layer.id === active?.id}
             data-hidden={!layer.visible}
             onClick={() => studio.setActiveLayerId(layer.id)}
-            className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false">
+            className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-text-editable="false">
           
             {layer.type === "vector" ?
             <button
@@ -175,12 +175,12 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
               onClick={(e) => {
                 e.stopPropagation();
                 studio.updateLayer(layer.id, { visible: !layer.visible });
-              }} data-oid="b92b2c75a4" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-classname-dynamic="true">
+              }} data-oid="b92b2c75a4" data-oid-shared="true" data-oid-classname-dynamic="true">
             
               {layer.visible ? <Eye className="h-3.5 w-3.5" data-oid="72364899a2" data-oid-shared="true" /> : <EyeOff className="h-3.5 w-3.5" data-oid="4beee333ef" data-oid-shared="true" />}
             </button>
             <LayerThumb layer={layer} />
-            <div className="min-w-0 flex-1" data-index={index} data-oid="9701a3e47e" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:cf11757b6ec2|element:p">
+            <div className="min-w-0 flex-1" data-index={index} data-oid="9701a3e47e" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="expression:cf11757b6ec2|element:p">
               {editing === layer.id ?
               <input
                 autoFocus
@@ -202,7 +202,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
                   {layer.name}
                 </p>
               }
-              <p className="type-caption text-muted-foreground" data-oid="58f576afbc" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:5332937ed06d|text|expression:5b9c7a56383a|text|expression:4900173db67f|text|expression:f3269a005485">
+              <p className="type-caption text-muted-foreground" data-oid="58f576afbc" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="expression:5332937ed06d|text|expression:5b9c7a56383a|text|expression:4900173db67f|text|expression:f3269a005485">
                 {layer.type === "pencil" ? "PENCIL" : "VECTOR"} · {layer.items.length} OBJ · {Math.round(layer.opacity * 100)}%{layer.blend === "multiply" ? " · MULT" : layer.blend === "screen" ? " · SCRN" : ""}
               </p>
             </div>
@@ -214,7 +214,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
               onClick={(e) => {
                 e.stopPropagation();
                 studio.updateLayer(layer.id, { locked: !layer.locked });
-              }} data-oid="e217988ca6" data-oid-shared="true" data-oid-instance-targetable="true">
+              }} data-oid="e217988ca6" data-oid-shared="true">
             
               {layer.locked ? <Lock className="h-3.5 w-3.5" data-oid="c71cab3537" data-oid-shared="true" /> : <Unlock className="h-3.5 w-3.5" data-oid="a43bf87258" data-oid-shared="true" />}
             </button>

@@ -1,6 +1,7 @@
 import type { BlendMode, Item, Layer, LayerType, PathItem, ShapeItem, StrokeItem } from "./types"
 import { catmull, drawItem, ellipseSamples, itemBounds, pressureGeometry } from "./render"
 import { desktop } from "./desktop"
+import { isNativeApp, saveNative } from "./native"
 
 /* ---------------- download helper ---------------- */
 
@@ -14,7 +15,7 @@ export function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1500)
 }
 
-export type SaveResult = "saved" | "shared" | "downloaded" | "cancelled"
+export type SaveResult = "saved" | "documents" | "shared" | "downloaded" | "cancelled"
 
 interface SaveOpts {
   filename: string
@@ -45,6 +46,10 @@ export async function saveFile(make: () => Blob | Promise<Blob>, o: SaveOpts): P
       ext: o.ext,
     })
     return saved ? "saved" : "cancelled"
+  }
+  // Android APK: save into Documents/Art Life Creative Studio (Files app), share sheet as fallback.
+  if (isNativeApp) {
+    return saveNative(await make(), o.filename)
   }
   const w = window as unknown as {
     showSaveFilePicker?: (opts: unknown) => Promise<{ createWritable: () => Promise<{ write: (b: Blob) => Promise<void>; close: () => Promise<void> }> }>

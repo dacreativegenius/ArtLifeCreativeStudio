@@ -59,23 +59,23 @@ const GROUPS: ToolDef[][] = [
 
 export function Toolbar({ studio }: {studio: Studio;}) {
   return (
-    <nav aria-label="Tools" className="relative z-20 flex w-[92px] shrink-0 flex-col items-center gap-ds-sm border-r border-border bg-card px-ds-xs py-ds-sm" data-oid="6d62bae305" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true" data-oid-text-editable="false" data-oid-text-source="expression:3905a53851a8|element:div|element:div">
+    <nav aria-label="Tools" className="relative z-20 flex w-[92px] shrink-0 flex-col max-md:overflow-y-auto items-center gap-ds-sm border-r border-border bg-card px-ds-xs py-ds-sm" data-oid="6d62bae305" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="expression:3905a53851a8|element:div|element:div">
       {GROUPS.map((group, gi) =>
-      <div key={gi} data-index={gi} className="grid w-full grid-cols-2 justify-items-center gap-ds-xs border-t border-border pt-ds-sm first:border-t-0 first:pt-0" data-oid="93f87d87c4" data-oid-shared="true" data-oid-instance-targetable="true">
+      <div key={gi} data-index={gi} className="grid w-full grid-cols-2 justify-items-center gap-ds-xs border-t border-border pt-ds-sm first:border-t-0 first:pt-0" data-oid="93f87d87c4" data-oid-shared="true">
           {group.map((t, index) => {
           const Icon = t.icon;
           return (
-            <div key={t.id} data-index={index} className="group relative" data-oid="800e1cc060" data-oid-shared="true" data-oid-instance-targetable="true">
+            <div key={t.id} data-index={index} className="group relative" data-oid="800e1cc060" data-oid-shared="true">
                 <button
                 type="button"
                 aria-label={`${t.label} (${t.key})`}
                 aria-pressed={studio.tool === t.id}
                 onClick={() => studio.setTool(t.id)}
-                className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground" data-oid="491b3d35da" data-oid-shared="true" data-oid-instance-targetable="true">
+                className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground" data-oid="491b3d35da" data-oid-shared="true">
                   <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
                 </button>
-                <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="e160155dab" data-oid-shared="true" data-oid-instance-targetable="true" data-oid-text-editable="false" data-oid-text-source="expression:d75e9a4a124f|element:kbd">
-                  {t.label} <kbd className="ml-ds-xs type-caption text-primary" data-oid="9101b06e17" data-oid-shared="true" data-oid-instance-targetable="true">{t.key}</kbd>
+                <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="e160155dab" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="expression:d75e9a4a124f|element:kbd">
+                  {t.label} <kbd className="ml-ds-xs type-caption text-primary" data-oid="9101b06e17" data-oid-shared="true">{t.key}</kbd>
                 </span>
               </div>);
 

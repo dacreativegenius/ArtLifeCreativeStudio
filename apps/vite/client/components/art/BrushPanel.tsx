@@ -35,7 +35,7 @@ function BrushPreview({ brush, size, opacity }: {brush: BrushId;size: number;opa
       seed: 11
     });
   }, [brush, size, opacity]);
-  return <canvas ref={ref} aria-hidden="true" className="h-[34px] w-full" data-oid="be4803aba4" data-oid-instance-targetable="true" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-editable="true" />;
+  return <canvas ref={ref} aria-hidden="true" className="h-[34px] w-full" data-oid="be4803aba4" data-oid-instance-targetable="true" data-oid-component-root="true" />;
 }
 
 export function BrushPanel({ studio }: {studio: Studio;}) {

@@ -26,7 +26,7 @@ export function NewProjectDialog({ studio }: {studio: Studio;}) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/70 p-ds-xl backdrop-blur-sm" onPointerDown={() => studio.setNewDialogOpen(false)} data-oid="ec4a46e9ab" data-oid-component-root="true" data-oid-callsite-deletable="true" data-oid-callsite-single="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/70 p-ds-xl backdrop-blur-sm" onPointerDown={() => studio.setNewDialogOpen(false)} data-oid="ec4a46e9ab" data-oid-component-root="true">
       <form
         role="dialog"
         aria-modal="true"
