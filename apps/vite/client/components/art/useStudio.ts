@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Item, type Layer, type LayerType, type ToolId } from "../../lib/art/types"
-import { renderDoc, translateItem } from "../../lib/art/render"
+import { isVectorBrush, renderDoc, rotateItem, scaleItem, translateItem, unionBounds } from "../../lib/art/render"
+import { isPathfinderable, outlineItem, pathfinder, type PathfinderOp } from "../../lib/art/pathfinder"
+import type { Rect } from "../../lib/art/types"
+
+export type AlignMode = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom"
+export type ArrangeMode = "front" | "forward" | "backward" | "back"
 import { buildSVG, parseDTM, safeName, saveFile, serializeDTM, type SaveResult } from "../../lib/art/fileio"
 import { desktop } from "../../lib/art/desktop"
 import { ANDROID_SAVE_FOLDER } from "../../lib/art/native"
@@ -245,6 +250,216 @@ export function useStudio() {
   }
 
   const canPaste = !!clipboard.current
+
+  /* ---------- object tools: transform, align, arrange, group, pathfinder, convert ---------- */
+
+  const selectedList = (): Item[] => {
+    const ids = new Set(selection)
+    const out: Item[] = []
+    for (const l of layersRef.current) for (const it of l.items) if (ids.has(it.id)) out.push(it)
+    return out
+  }
+
+  const getSelectionBounds = (): Rect | null => unionBounds(selectedList().filter((i) => i.kind !== "erase"))
+
+  /** Apply fn to every selected item (one undo step). */
+  const transformSelection = (fn: (it: Item) => Item) => {
+    if (!selection.length) return
+    const ids = new Set(selection)
+    commit((prev) => prev.map((l) => (l.items.some((i) => ids.has(i.id)) ? { ...l, items: l.items.map((i) => (ids.has(i.id) ? fn(i) : i)) } : l)))
+  }
+
+  const setSelectionBounds = (patch: Partial<Rect>, lockAspect: boolean) => {
+    const b = getSelectionBounds()
+    if (!b) return
+    let w = patch.w ?? b.w
+    let h = patch.h ?? b.h
+    if (lockAspect && patch.w !== undefined && b.w > 0) h = b.h * (patch.w / b.w)
+    if (lockAspect && patch.h !== undefined && b.h > 0) w = b.w * (patch.h / b.h)
+    const x = patch.x ?? b.x
+    const y = patch.y ?? b.y
+    const sx = b.w > 0 ? Math.max(1, w) / b.w : 1
+    const sy = b.h > 0 ? Math.max(1, h) / b.h : 1
+    transformSelection((it) => translateItem(sx !== 1 || sy !== 1 ? scaleItem(it, b.x, b.y, sx, sy) : it, x - b.x, y - b.y))
+  }
+
+  const flipSelection = (axis: "h" | "v") => {
+    const b = getSelectionBounds()
+    if (!b) return
+    const cx = b.x + b.w / 2
+    const cy = b.y + b.h / 2
+    transformSelection((it) => scaleItem(it, cx, cy, axis === "h" ? -1 : 1, axis === "v" ? -1 : 1))
+  }
+
+  const rotateSelection = (deg: number) => {
+    const b = getSelectionBounds()
+    if (!b || !deg) return
+    const a = (deg * Math.PI) / 180
+    transformSelection((it) => rotateItem(it, b.x + b.w / 2, b.y + b.h / 2, a))
+  }
+
+  /** Selected objects as units: a group, a pencil layer's sketch, or a single item. */
+  const selectionUnits = (): Item[][] => {
+    const ids = new Set(selection)
+    const units: Item[][] = []
+    const byKey = new Map<string, Item[]>()
+    for (const l of layersRef.current) {
+      for (const it of l.items) {
+        if (!ids.has(it.id)) continue
+        const pencilMark = it.kind === "erase" || (it.kind === "stroke" && !isVectorBrush(it.brush))
+        const key = it.group ? `g:${it.group}` : l.type === "pencil" && pencilMark ? `s:${l.id}` : null
+        if (!key) {
+          if (it.kind !== "erase") units.push([it])
+          continue
+        }
+        let u = byKey.get(key)
+        if (!u) {
+          u = []
+          byKey.set(key, u)
+          units.push(u)
+        }
+        u.push(it)
+      }
+    }
+    return units.filter((u) => u.some((i) => i.kind !== "erase"))
+  }
+
+  const moveUnits = (moves: Map<string, { dx: number; dy: number }>) =>
+    commit((prev) =>
+      prev.map((l) => ({
+        ...l,
+        items: l.items.map((i) => {
+          const m = moves.get(i.id)
+          return m && (m.dx || m.dy) ? translateItem(i, m.dx, m.dy) : i
+        }),
+      })),
+    )
+
+  const alignSelection = (mode: AlignMode) => {
+    const units = selectionUnits()
+    if (!units.length) return flash("Select objects to align")
+    const boxes = units.map((u) => unionBounds(u.filter((i) => i.kind !== "erase"))!)
+    let ref: Rect
+    if (units.length === 1) ref = { x: 0, y: 0, w: DOC_W, h: DOC_H }
+    else {
+      const x0 = Math.min(...boxes.map((b) => b.x))
+      const y0 = Math.min(...boxes.map((b) => b.y))
+      const x1 = Math.max(...boxes.map((b) => b.x + b.w))
+      const y1 = Math.max(...boxes.map((b) => b.y + b.h))
+      ref = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+    }
+    const moves = new Map<string, { dx: number; dy: number }>()
+    units.forEach((u, i) => {
+      const b = boxes[i]
+      let dx = 0
+      let dy = 0
+      if (mode === "left") dx = ref.x - b.x
+      if (mode === "hcenter") dx = ref.x + ref.w / 2 - (b.x + b.w / 2)
+      if (mode === "right") dx = ref.x + ref.w - (b.x + b.w)
+      if (mode === "top") dy = ref.y - b.y
+      if (mode === "vcenter") dy = ref.y + ref.h / 2 - (b.y + b.h / 2)
+      if (mode === "bottom") dy = ref.y + ref.h - (b.y + b.h)
+      for (const it of u) moves.set(it.id, { dx, dy })
+    })
+    moveUnits(moves)
+    if (units.length === 1) flash("Aligned to canvas")
+  }
+
+  const distributeSelection = (axis: "h" | "v") => {
+    const units = selectionUnits()
+    if (units.length < 3) return flash("Distribute needs 3 or more objects")
+    const rows = units.map((u) => {
+      const b = unionBounds(u.filter((i) => i.kind !== "erase"))!
+      return { u, c: axis === "h" ? b.x + b.w / 2 : b.y + b.h / 2 }
+    })
+    rows.sort((a, b) => a.c - b.c)
+    const first = rows[0].c
+    const step = (rows[rows.length - 1].c - first) / (rows.length - 1)
+    const moves = new Map<string, { dx: number; dy: number }>()
+    rows.forEach((r, i) => {
+      const d = first + step * i - r.c
+      for (const it of r.u) moves.set(it.id, axis === "h" ? { dx: d, dy: 0 } : { dx: 0, dy: d })
+    })
+    moveUnits(moves)
+  }
+
+  const arrangeSelection = (mode: ArrangeMode) => {
+    if (!selection.length) return
+    const ids = new Set(selection)
+    commit((prev) =>
+      prev.map((l) => {
+        if (!l.items.some((i) => ids.has(i.id))) return l
+        const sel = l.items.filter((i) => ids.has(i.id))
+        const rest = l.items.filter((i) => !ids.has(i.id))
+        if (mode === "front") return { ...l, items: [...rest, ...sel] }
+        if (mode === "back") return { ...l, items: [...sel, ...rest] }
+        const items = l.items.slice()
+        if (mode === "forward") {
+          for (let i = items.length - 2; i >= 0; i--)
+            if (ids.has(items[i].id) && !ids.has(items[i + 1].id)) [items[i], items[i + 1]] = [items[i + 1], items[i]]
+        } else {
+          for (let i = 1; i < items.length; i++)
+            if (ids.has(items[i].id) && !ids.has(items[i - 1].id)) [items[i], items[i - 1]] = [items[i - 1], items[i]]
+        }
+        return { ...l, items }
+      }),
+    )
+  }
+
+  const selectionGrouped = selectedList().some((i) => !!i.group)
+
+  const groupSelection = () => {
+    const items = selectedList().filter((i) => i.kind !== "erase")
+    if (items.length < 2) return flash("Select 2 or more objects to group")
+    const g = uid("g")
+    transformSelection((it) => (it.kind === "erase" ? it : { ...it, group: g }))
+    flash(`Grouped ${items.length} objects`)
+  }
+
+  const ungroupSelection = () => {
+    if (!selectionGrouped) return
+    transformSelection((it) => {
+      if (!it.group) return it
+      const { group: _g, ...rest } = it
+      return rest as Item
+    })
+    flash("Ungrouped")
+  }
+
+  const runPathfinder = (op: PathfinderOp) => {
+    const ids = new Set(selection)
+    const picked: Item[] = []
+    for (const l of layersRef.current) {
+      if (l.locked || !l.visible) continue
+      for (const it of l.items) if (ids.has(it.id) && isPathfinderable(it)) picked.push(it)
+    }
+    if (picked.length < 2) return flash("Pathfinder needs 2 or more selected vector shapes, paths or ink strokes")
+    const result = pathfinder(picked, op)
+    if (!result) return flash(op === "intersect" ? "Those shapes don't overlap" : "Nothing would be left — no change made")
+    const anchor = op === "minusFront" ? picked[0] : picked[picked.length - 1]
+    const src = new Set(picked.map((i) => i.id))
+    commit((prev) => prev.map((l) => ({ ...l, items: l.items.flatMap((i) => (i.id === anchor.id ? [result] : src.has(i.id) ? [] : [i])) })))
+    setSelection([result.id])
+    const names: Record<PathfinderOp, string> = { unite: "Unite", minusFront: "Minus Front", intersect: "Intersect", exclude: "Exclude" }
+    flash(`${names[op]} · ${picked.length} objects → 1 shape`)
+  }
+
+  const convertToShape = () => {
+    const repl = new Map<string, Item[]>()
+    for (const it of selectedList()) {
+      const out = outlineItem(it)
+      if (!out) continue
+      if (out.length > 1 && !it.group) {
+        const g = uid("g")
+        out.forEach((p) => (p.group = g))
+      }
+      repl.set(it.id, out)
+    }
+    if (!repl.size) return flash("Select a stroked path, shape or vector brush stroke to convert")
+    commit((prev) => prev.map((l) => ({ ...l, items: l.items.flatMap((i) => repl.get(i.id) ?? [i]) })))
+    setSelection(Array.from(repl.values()).flat().map((i) => i.id))
+    flash(`Converted ${repl.size} object${repl.size > 1 ? "s" : ""} to filled shape${repl.size > 1 ? "s" : ""}`)
+  }
 
   const selectAll = () => {
     if (!activeLayer || activeLayer.locked) return
@@ -541,6 +756,18 @@ export function useStudio() {
     cutSelection,
     paste,
     canPaste,
+    getSelectionBounds,
+    setSelectionBounds,
+    flipSelection,
+    rotateSelection,
+    alignSelection,
+    distributeSelection,
+    arrangeSelection,
+    selectionGrouped,
+    groupSelection,
+    ungroupSelection,
+    runPathfinder,
+    convertToShape,
     selectAll,
     nudge,
     view,
@@ -617,6 +844,22 @@ export function useStudio() {
       if (mod && k === "v") {
         e.preventDefault()
         s.paste()
+        return
+      }
+      if (mod && k === "g") {
+        e.preventDefault()
+        if (e.shiftKey) s.ungroupSelection()
+        else s.groupSelection()
+        return
+      }
+      if (mod && (k === "]" || k === "}")) {
+        e.preventDefault()
+        s.arrangeSelection(e.shiftKey ? "front" : "forward")
+        return
+      }
+      if (mod && (k === "[" || k === "{")) {
+        e.preventDefault()
+        s.arrangeSelection(e.shiftKey ? "back" : "backward")
         return
       }
       if (mod && k === "a") {

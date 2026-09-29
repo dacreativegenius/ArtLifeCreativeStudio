@@ -792,6 +792,12 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       if (layerId && l.id !== layerId) continue;
       const it = l.items.find((i) => i.id === id);
       if (!it) continue;
+      if (it.group) {
+        const g = it.group;
+        const out: string[] = [];
+        for (const ll of S.current.layers) for (const i of ll.items) if (i.group === g && !i.hidden) out.push(i.id);
+        return out;
+      }
       if (l.type === "pencil" && it.kind === "stroke" && isPencilMark(it)) return l.items.filter((i) => isPencilMark(i) && !i.hidden).map((i) => i.id);
       return [id];
     }
@@ -800,6 +806,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
 
   const expandGroups = (ids: string[]) => {
     const out = new Set(ids);
+    const groups = new Set<string>();
+    for (const l of S.current.layers) for (const i of l.items) if (out.has(i.id) && i.group) groups.add(i.group);
+    if (groups.size) for (const l of S.current.layers) for (const i of l.items) if (i.group && groups.has(i.group) && !i.hidden) out.add(i.id);
     for (const l of S.current.layers) {
       if (l.type !== "pencil") continue;
       if (!l.items.some((i) => out.has(i.id) && i.kind === "stroke" && isPencilMark(i))) continue;
@@ -1630,7 +1639,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     <section className="relative flex min-w-0 flex-1 flex-col" data-oid="b1527df8cb" data-oid-component-root="true">
       <div
         ref={wrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:a5460c4fa208">
+        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:1ddaaafbc384">
         
         <canvas
           ref={canvasRef}

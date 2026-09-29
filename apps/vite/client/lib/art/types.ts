@@ -38,6 +38,8 @@ export interface StrokeItem {
   points: Pt[]
   seed: number
   hidden?: boolean
+  /** Group id — grouped objects select, move and transform together. */
+  group?: string
 }
 
 export interface EraseItem {
@@ -46,6 +48,8 @@ export interface EraseItem {
   size: number
   points: Pt[]
   hidden?: boolean
+  /** Group id — grouped objects select, move and transform together. */
+  group?: string
 }
 
 export interface ShapeItem {
@@ -58,6 +62,8 @@ export interface ShapeItem {
   opacity: number
   fill: string | null
   hidden?: boolean
+  /** Group id — grouped objects select, move and transform together. */
+  group?: string
 }
 
 export interface ImageItem {
@@ -70,6 +76,8 @@ export interface ImageItem {
   rot?: number
   canvas: HTMLCanvasElement
   hidden?: boolean
+  /** Group id — grouped objects select, move and transform together. */
+  group?: string
 }
 
 /** Bezier anchor with absolute in/out handle positions (handle === anchor means a corner). */
@@ -100,6 +108,8 @@ export interface PathItem {
   /** Pressure Ink blob shape: a filled, tapered stroke — colour edits recolour its fill. */
   blob?: boolean
   hidden?: boolean
+  /** Group id — grouped objects select, move and transform together. */
+  group?: string
 }
 
 export type Item = StrokeItem | EraseItem | ShapeItem | ImageItem | PathItem

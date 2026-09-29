@@ -347,7 +347,7 @@ function drawPath(ctx: CanvasRenderingContext2D, it: PathItem) {
   }
 }
 
-function mapPath(it: PathItem, f: (x: number, y: number) => XY): PathItem {
+export function mapPath(it: PathItem, f: (x: number, y: number) => XY): PathItem {
   return {
     ...it,
     subpaths: it.subpaths.map((sp) => ({

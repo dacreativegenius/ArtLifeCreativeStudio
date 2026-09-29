@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Brush, Layers, Palette, PanelRightClose, PanelRightOpen, X } from "lucide-react";
+import { Boxes, Brush, Layers, Palette, PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import { useStudio } from "../components/art/useStudio";
 import { TopBar } from "../components/art/TopBar";
 import { Toolbar } from "../components/art/Toolbar";
@@ -8,6 +8,7 @@ import { ColorPanel } from "../components/art/ColorPanel";
 import { SwatchesPanel } from "../components/art/SwatchesPanel";
 import { BrushPanel } from "../components/art/BrushPanel";
 import { LayersPanel } from "../components/art/LayersPanel";
+import { ObjectPanel } from "../components/art/ObjectPanel";
 import { NewProjectDialog } from "../components/art/NewProjectDialog";
 import { onAndroidBack } from "../lib/art/native";
 import { useAutosave } from "../components/art/useAutosave";
@@ -18,9 +19,9 @@ export default function Index() {
   // Phones: the colour / brush / layer panels live in a slide-out drawer. Desktop + tablets: always docked.
   const [panelsOpen, setPanelsOpen] = useState(false);
   // Right-side panel tabs + desktop collapse
-  const [tab, setTab] = useState<"color" | "brushes" | "layers">("color");
+  const [tab, setTab] = useState<"color" | "brushes" | "layers" | "object">("color");
   const [collapsed, setCollapsed] = useState(false);
-  const openTab = (t: "color" | "brushes" | "layers") => {
+  const openTab = (t: "color" | "brushes" | "layers" | "object") => {
     setTab(t);
     setCollapsed(false);
   };
@@ -72,6 +73,9 @@ export default function Index() {
             <button type="button" aria-label="Layers panel" title="Layers" onClick={() => openTab("layers")} className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary" data-oid="89eab6b126">
               <Layers className="h-4 w-4" data-oid="6b2976eea9" />
             </button>
+            <button type="button" aria-label="Object panel" title="Object" onClick={() => openTab("object")} className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary" data-oid="ff34a1d3a9">
+              <Boxes className="h-4 w-4" data-oid="8c50dd6431" />
+            </button>
           </nav>
         }
         <aside
@@ -90,22 +94,25 @@ export default function Index() {
             </button>
           </div>
           <div className="sticky top-0 z-10 flex items-end gap-ds-xs border-b border-border bg-card pl-ds-md pr-ds-xs pt-ds-sm" data-oid="ed081b9c1e">
-            <div role="tablist" aria-label="Panel sections" className="ds-tab-list flex-1 gap-ds-lg border-b-0" data-oid="dc59387f60">
+            <div role="tablist" aria-label="Panel sections" className="ds-tab-list flex-1 gap-ds-md border-b-0" data-oid="dc59387f60">
               <button type="button" role="tab" id="tab-color" aria-controls="panel-tab" aria-selected={tab === "color"} onClick={() => setTab("color")} className="ds-tab inline-flex items-center gap-ds-xs pb-ds-sm" data-oid="443adc3c80">
-                <Palette className="h-3.5 w-3.5" data-oid="6e53d457b7" /> Colour
+                Colour
               </button>
               <button type="button" role="tab" id="tab-brushes" aria-controls="panel-tab" aria-selected={tab === "brushes"} onClick={() => setTab("brushes")} className="ds-tab inline-flex items-center gap-ds-xs pb-ds-sm" data-oid="6eb0c736e3">
-                <Brush className="h-3.5 w-3.5" data-oid="7fc7b772ad" /> Brushes
+                Brushes
               </button>
               <button type="button" role="tab" id="tab-layers" aria-controls="panel-tab" aria-selected={tab === "layers"} onClick={() => setTab("layers")} className="ds-tab inline-flex items-center gap-ds-xs pb-ds-sm" data-oid="89b474a560">
-                <Layers className="h-3.5 w-3.5" data-oid="79389e71c3" /> Layers
+                Layers
+              </button>
+              <button type="button" role="tab" id="tab-object" aria-controls="panel-tab" aria-selected={tab === "object"} onClick={() => setTab("object")} className="ds-tab inline-flex items-center gap-ds-xs pb-ds-sm" data-oid="1f572481af">
+                Object
               </button>
             </div>
             <button type="button" aria-label="Collapse panels" title="Collapse panels" onClick={() => setCollapsed(true)} className="mb-ds-xs hidden h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground md:grid" data-oid="351b84970e">
               <PanelRightClose className="h-4 w-4" data-oid="89f927145a" />
             </button>
           </div>
-          <div id="panel-tab" role="tabpanel" aria-labelledby={`tab-${tab}`} className="flex flex-col" data-oid="b947f8d1ff" data-oid-text-editable="false" data-oid-text-source="expression:d72a2073dd5f|expression:e211dfe9a438|expression:5afa108e8fa6">
+          <div id="panel-tab" role="tabpanel" aria-labelledby={`tab-${tab}`} className="flex flex-col" data-oid="b947f8d1ff" data-oid-text-editable="false" data-oid-text-source="expression:d72a2073dd5f|expression:e211dfe9a438|expression:5afa108e8fa6|expression:34d1a033247e">
             {tab === "color" &&
             <>
                 <ColorPanel studio={studio} />
@@ -114,6 +121,7 @@ export default function Index() {
             }
             {tab === "brushes" && <BrushPanel studio={studio} />}
             {tab === "layers" && <LayersPanel studio={studio} />}
+            {tab === "object" && <ObjectPanel studio={studio} />}
           </div>
         </aside>
       </div>
