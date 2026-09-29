@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Studio } from "./useStudio";
 import { Panel } from "./Panel";
+import { NumInput } from "./NumInput";
 import type { BrushId, Pt } from "../../lib/art/types";
 import { drawItem, isVectorBrush, simplify } from "../../lib/art/render";
 import { readCssColor } from "../../lib/art/color";
@@ -110,35 +111,37 @@ export function BrushPanel({ studio }: {studio: Studio;}) {
       </div>
 
       <div className="mt-ds-md flex flex-col gap-ds-sm" data-oid="3972e47a59">
-        <label className="grid grid-cols-[64px_1fr_44px] items-center gap-ds-sm text-label text-muted-foreground" data-oid="7409c14eb1">
-          Size
-          <input type="range" min={1} max={120} value={cur.size} onChange={(e) => studio.updateBrush({ size: Number(e.target.value) })} className="accent-primary" data-oid="581e147c09" />
-          <output className="text-right type-caption text-foreground" data-oid="87f78ce56c" data-oid-text-editable="false" data-oid-text-source="expression:90710e42688a|text">{cur.size}px</output>
-        </label>
-        <label className="grid grid-cols-[64px_1fr_44px] items-center gap-ds-sm text-label text-muted-foreground" data-oid="0edc012754">
-          Opacity
+        <div className="grid grid-cols-[64px_1fr_52px] items-center gap-ds-sm text-label text-muted-foreground" data-oid="7409c14eb1">
+          <span data-oid="581e147c09">Size</span>
+          <input type="range" aria-label="Brush size" min={1} max={120} value={cur.size} onChange={(e) => studio.updateBrush({ size: Number(e.target.value) })} className="accent-primary" data-oid="87f78ce56c" />
+          <NumInput label="Brush size" value={cur.size} min={1} max={500} suffix="px" onChange={(v) => studio.updateBrush({ size: v })} className="w-full" />
+        </div>
+        <div className="grid grid-cols-[64px_1fr_52px] items-center gap-ds-sm text-label text-muted-foreground" data-oid="0edc012754">
+          <span data-oid="898fef3884">Opacity</span>
           <input
             type="range"
+            aria-label="Brush opacity"
             min={5}
             max={100}
             value={Math.round(cur.opacity * 100)}
             onChange={(e) => studio.updateBrush({ opacity: Number(e.target.value) / 100 })}
-            className="accent-primary" data-oid="898fef3884" />
+            className="accent-primary" data-oid="19f9ef4e7a" />
           
-          <output className="text-right type-caption text-foreground" data-oid="645c5961ca" data-oid-text-editable="false" data-oid-text-source="expression:17fd892d30f8|text">{Math.round(cur.opacity * 100)}%</output>
-        </label>
-        <label className="grid grid-cols-[64px_1fr_44px] items-center gap-ds-sm text-label text-muted-foreground" data-oid="e572911bb5">
-          Stabilizer
+          <NumInput label="Brush opacity" value={Math.round(cur.opacity * 100)} min={1} max={100} suffix="%" onChange={(v) => studio.updateBrush({ opacity: v / 100 })} className="w-full" />
+        </div>
+        <div className="grid grid-cols-[64px_1fr_52px] items-center gap-ds-sm text-label text-muted-foreground" data-oid="e572911bb5">
+          <span data-oid="4e2fad6efd">Stabilizer</span>
           <input
             type="range"
+            aria-label="Stabilizer"
             min={0}
             max={90}
             value={Math.round(studio.stabilizer * 100)}
             onChange={(e) => studio.setStabilizer(Number(e.target.value) / 100)}
             className="accent-primary" data-oid="292d3da16a" />
           
-          <output className="text-right type-caption text-foreground" data-oid="bf8f9bad08" data-oid-text-editable="false" data-oid-text-source="expression:4d15515b5b0d|text">{Math.round(studio.stabilizer * 100)}%</output>
-        </label>
+          <NumInput label="Stabilizer" value={Math.round(studio.stabilizer * 100)} min={0} max={90} suffix="%" onChange={(v) => studio.setStabilizer(v / 100)} className="w-full" />
+        </div>
         <label className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="159985f482">
           <input type="checkbox" checked={studio.simulatePressure} onChange={(e) => studio.setSimulatePressure(e.target.checked)} className="accent-primary" data-oid="e56bf177a4" />
           Simulate pressure from mouse speed

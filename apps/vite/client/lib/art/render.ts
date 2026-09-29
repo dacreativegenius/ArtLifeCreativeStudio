@@ -766,6 +766,107 @@ export function floodMask(src: ImageData, sx: number, sy: number, tol: number) {
   return { grown, W, H, minX, minY, maxX, maxY }
 }
 
+/* ---------------- Blob brush: pressure stroke → filled shape ---------------- */
+
+/** Turn a Pressure Ink stroke into a filled, tapered vector shape (blob brush). */
+export function strokeToBlob(s: StrokeItem): PathItem | null {
+  const g = pressureGeometry(s)
+  if (!g) return null
+  const base = { id: s.id, kind: "path" as const, stroke: null, size: 0, fill: s.color, opacity: s.opacity, blob: true }
+  if (g.dot) {
+    const { x, y, r } = g.dot
+    const k = r * K
+    const nodes: PathNode[] = [
+      { x: x + r, y, ix: x + r, iy: y - k, ox: x + r, oy: y + k },
+      { x, y: y + r, ix: x + k, iy: y + r, ox: x - k, oy: y + r },
+      { x: x - r, y, ix: x - r, iy: y + k, ox: x - r, oy: y - k },
+      { x, y: y - r, ix: x - k, iy: y - r, ox: x + k, oy: y - r },
+    ]
+    return { ...base, subpaths: [{ closed: true, nodes }] }
+  }
+  const { left, right, pts, widths } = g
+  const n = pts.length
+  const dir = (i: number) => {
+    const a = pts[Math.max(0, i - 1)]
+    const b = pts[Math.min(n - 1, i + 1)]
+    return Math.atan2(b.y - a.y, b.x - a.x)
+  }
+  const CAP = 6
+  const poly: XY[] = [...left]
+  const ae = dir(n - 1)
+  for (let k = 1; k < CAP; k++) {
+    const a = ae + Math.PI / 2 - (Math.PI * k) / CAP
+    poly.push({ x: pts[n - 1].x + Math.cos(a) * widths[n - 1], y: pts[n - 1].y + Math.sin(a) * widths[n - 1] })
+  }
+  for (let i = n - 1; i >= 0; i--) poly.push(right[i])
+  const as = dir(0)
+  for (let k = 1; k < CAP; k++) {
+    const a = as - Math.PI / 2 - (Math.PI * k) / CAP
+    poly.push({ x: pts[0].x + Math.cos(a) * widths[0], y: pts[0].y + Math.sin(a) * widths[0] })
+  }
+  const simple = rdpClosed(poly, 0.35)
+  if (simple.length < 3) return null
+  return { ...base, subpaths: [{ closed: true, nodes: smoothNodes(simple) }] }
+}
+
+/**
+ * Cut an eraser stroke out of a filled vector shape. Returns the reshaped path,
+ * null when the shape was fully erased, or undefined when the eraser didn't touch it.
+ */
+export function eraseFromPath(it: PathItem, er: EraseItem): PathItem | null | undefined {
+  const b = itemBounds(it)
+  if (!rectsIntersect(b, itemBounds(er)) || b.w <= 0 || b.h <= 0) return undefined
+  const pad = 3
+  const scale = Math.max(0.5, Math.min(3, 1800 / Math.max(b.w, b.h)))
+  const W = Math.ceil((b.w + pad * 2) * scale)
+  const H = Math.ceil((b.h + pad * 2) * scale)
+  const c = document.createElement("canvas")
+  c.width = W
+  c.height = H
+  const ctx = c.getContext("2d", { willReadFrequently: true })
+  if (!ctx) return undefined
+  ctx.setTransform(scale, 0, 0, scale, -(b.x - pad) * scale, -(b.y - pad) * scale)
+  drawItem(ctx, { ...it, hidden: false, opacity: 1, fill: "#000000", stroke: null })
+  const count = () => {
+    const d = ctx.getImageData(0, 0, W, H).data
+    let k = 0
+    for (let i = 3; i < d.length; i += 4) if (d[i] >= 128) k++
+    return k
+  }
+  const before = count()
+  drawItem(ctx, er)
+  const data = ctx.getImageData(0, 0, W, H).data
+  const grown = new Uint8Array(W * H)
+  let after = 0
+  let minX = W
+  let minY = H
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (data[(y * W + x) * 4 + 3] < 128) continue
+      grown[y * W + x] = 1
+      after++
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+  if (before - after < 2) return undefined
+  if (after < 4 || maxX < 0) return null
+  const subs = traceMask({ grown, W, H, minX, minY, maxX, maxY })
+  if (!subs.length) return null
+  const ox = b.x - pad
+  const oy = b.y - pad
+  const f = (x: number, y: number) => ({ x: x / scale + ox, y: y / scale + oy })
+  return mapPath({ ...it, subpaths: subs, evenOdd: true }, f)
+}
+
+/** Convert a Pressure Ink stroke (legacy) or keep any other item as-is. */
+export const toBlobIfPressure = (it: Item): Item =>
+  it.kind === "stroke" && it.brush === "vector-pressure" ? strokeToBlob(it) ?? it : it
+
 /* ---------------- Live-paint: region mask → vector path ---------------- */
 
 function rdpOpen(pts: XY[], eps: number): XY[] {

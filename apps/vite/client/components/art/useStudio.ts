@@ -204,6 +204,48 @@ export function useStudio() {
     setSelection([])
   }
 
+  /* ---------- clipboard: cut / copy / paste ---------- */
+  const clipboard = useRef<{ layerId: string; items: Item[] } | null>(null)
+  const pasteCount = useRef(0)
+
+  const copySelection = (silent = false) => {
+    if (!selection.length) return false
+    const ids = new Set(selection)
+    for (const l of layersRef.current) {
+      const items = l.items.filter((i) => ids.has(i.id) && i.kind !== "erase")
+      if (items.length) {
+        clipboard.current = { layerId: l.id, items }
+        pasteCount.current = 0
+        if (!silent) flash(`Copied ${items.length} object${items.length > 1 ? "s" : ""}`)
+        return true
+      }
+    }
+    return false
+  }
+
+  const cutSelection = () => {
+    if (!copySelection(true)) return
+    const n = clipboard.current?.items.length ?? 0
+    deleteSelection()
+    flash(`Cut ${n} object${n > 1 ? "s" : ""} · Ctrl V pastes`)
+  }
+
+  const paste = () => {
+    const clip = clipboard.current
+    if (!clip) return flash("Nothing to paste — cut or copy a selection first")
+    pasteCount.current++
+    const off = 16 * pasteCount.current
+    const fresh = clip.items.map((i) => ({ ...translateItem(i, off, off), id: uid() }) as Item)
+    const target = layersRef.current.find((l) => l.id === clip.layerId && !l.locked) ?? activeLayer
+    if (!target) return
+    commit((prev) => prev.map((l) => (l.id === target.id ? { ...l, items: [...l.items, ...fresh] } : l)))
+    setActiveLayerId(target.id)
+    setSelection(fresh.map((i) => i.id))
+    if (!["select", "direct", "move", "transform"].includes(tool)) setTool("select")
+  }
+
+  const canPaste = !!clipboard.current
+
   const selectAll = () => {
     if (!activeLayer || activeLayer.locked) return
     setSelection(activeLayer.items.filter((i) => i.kind !== "erase" && !i.hidden).map((i) => i.id))
@@ -365,6 +407,8 @@ export function useStudio() {
   }
 
   const colorPatch = (target: ColorTarget, hex: string | null) => (it: Item): Item | null => {
+    // Pressure Ink blobs are filled shapes: any colour pick recolours the ink itself
+    if (it.kind === "path" && it.blob) return hex ? { ...it, fill: hex } : null
     if (target === "stroke") {
       if (it.kind === "shape") return hex ? { ...it, color: hex, size: it.size || Math.max(1, shapeStroke) } : { ...it, size: 0 }
       if (it.kind === "path") return hex ? { ...it, stroke: hex, size: it.size || Math.max(1, shapeStroke) } : { ...it, stroke: null }
@@ -402,6 +446,7 @@ export function useStudio() {
     if (v > 0) setStrokeEnabled(true)
     patchSelection((it) => {
       if (it.kind === "shape") return { ...it, size: v }
+      if (it.kind === "path" && it.blob) return null
       if (it.kind === "path") return { ...it, size: v, stroke: v > 0 ? it.stroke ?? primary : it.stroke }
       if (isVectorStroke(it)) return { ...it, size: Math.max(1, v) }
       return null
@@ -431,6 +476,8 @@ export function useStudio() {
         setShapeFill(!!it.fill)
         if (it.fill) setSecondary(it.fill)
       }
+    } else if (it.kind === "path" && it.blob) {
+      if (it.fill) setPrimary(it.fill)
     } else if (it.kind === "path") {
       if (it.stroke) setPrimary(it.stroke)
       setStrokeEnabled(!!it.stroke && it.size > 0)
@@ -490,6 +537,10 @@ export function useStudio() {
     selection,
     setSelection,
     deleteSelection,
+    copySelection,
+    cutSelection,
+    paste,
+    canPaste,
     selectAll,
     nudge,
     view,
@@ -551,6 +602,21 @@ export function useStudio() {
       if (mod && k === "y") {
         e.preventDefault()
         s.redo()
+        return
+      }
+      if (mod && k === "x") {
+        e.preventDefault()
+        s.cutSelection()
+        return
+      }
+      if (mod && k === "c") {
+        e.preventDefault()
+        s.copySelection()
+        return
+      }
+      if (mod && k === "v") {
+        e.preventDefault()
+        s.paste()
         return
       }
       if (mod && k === "a") {
@@ -657,6 +723,9 @@ export function useStudio() {
         case "selectAll": return s.selectAll()
         case "deselect": return s.deselect()
         case "delete": return s.deleteSelection()
+        case "cut": return s.cutSelection()
+        case "copy": return void s.copySelection()
+        case "paste": return s.paste()
         case "swap": return s.swapColors()
         case "newLayer": return s.addLayer()
         case "newPencilLayer": return s.addLayer("pencil")

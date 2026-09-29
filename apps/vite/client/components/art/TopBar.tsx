@@ -6,6 +6,7 @@ import { InstallApp } from "./InstallApp";
 import type { Studio } from "./useStudio";
 import { desktop } from "../../lib/art/desktop";
 import { ArtLifeLogo } from "./ArtLifeLogo";
+import { NumInput } from "./NumInput";
 
 const barBtn =
 "inline-flex h-7 items-center gap-ds-xs rounded-md px-ds-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-35";
@@ -16,15 +17,17 @@ function Range({
   min,
   max,
   step = 1,
-  format,
+  suffix = "",
   onChange,
-  onPointerDown
-}: {label: string;value: number;min: number;max: number;step?: number;format: (v: number) => string;onChange: (v: number) => void;onPointerDown?: () => void;}) {
+  onPointerDown,
+  onType
+}: {label: string;value: number;min: number;max: number;step?: number;suffix?: string;onChange: (v: number) => void;onPointerDown?: () => void;onType?: (v: number) => void;}) {
   return (
-    <label className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="6213878dcc" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="expression:64c65374dbab|element:input|element:output">
-      {label}
+    <div className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="6213878dcc" data-oid-component-root="true">
+      <span data-oid="db5ea76be2">{label}</span>
       <input
         type="range"
+        aria-label={label}
         min={min}
         max={max}
         step={step}
@@ -33,8 +36,8 @@ function Range({
         onPointerDown={onPointerDown}
         className="h-1 w-28 cursor-pointer accent-primary" data-oid="0e4ba497ec" />
       
-      <output className="w-10 type-caption text-foreground" data-oid="f47c6f1e4a">{format(value)}</output>
-    </label>);
+      <NumInput label={label} value={value} min={min} max={max} suffix={suffix} onChange={onType ?? onChange} />
+    </div>);
 
 }
 
@@ -43,25 +46,25 @@ function ToolOptions({ studio }: {studio: Studio;}) {
   if (t === "brush") {
     return (
       <div className="flex items-center gap-ds-lg" data-oid="8d7add58d4" data-oid-component-root="true">
-        <Range label="Size" value={studio.currentBrush.size} min={1} max={120} format={(v) => `${v}px`} onChange={(v) => studio.updateBrush({ size: v })} />
+        <Range label="Size" value={studio.currentBrush.size} min={1} max={120} suffix="px" onChange={(v) => studio.updateBrush({ size: v })} />
         <Range
           label="Opacity"
           value={Math.round(studio.currentBrush.opacity * 100)}
           min={5}
           max={100}
-          format={(v) => `${v}%`}
+          suffix="%"
           onChange={(v) => studio.updateBrush({ opacity: v / 100 })} />
         
       </div>);
 
   }
   if (t === "eraser") {
-    return <Range label="Eraser size" value={studio.eraserSize} min={1} max={200} format={(v) => `${v}px`} onChange={studio.setEraserSize} />;
+    return <Range label="Eraser size" value={studio.eraserSize} min={1} max={200} suffix="px" onChange={studio.setEraserSize} />;
   }
   if (t === "line" || t === "rect" || t === "ellipse" || t === "pen") {
     return (
       <div className="flex items-center gap-ds-lg" data-oid="537405d26c" data-oid-component-root="true" data-oid-text-editable="false">
-        <Range label="Stroke" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={120} format={(v) => `${v}px`} onPointerDown={studio.beginSelectionEdit} onChange={(v) => studio.setStrokeWidth(v, false)} />
+        <Range label="Stroke" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={120} suffix="px" onPointerDown={studio.beginSelectionEdit} onChange={(v) => studio.setStrokeWidth(v, false)} onType={(v) => studio.setStrokeWidth(v, true)} />
         {t !== "line" &&
         <label className="flex items-center gap-ds-xs text-label text-muted-foreground" data-oid="ef164641b7">
             <input type="checkbox" checked={studio.shapeFill} onChange={(e) => studio.setFillEnabled(e.target.checked)} className="accent-primary" data-oid="4e8387f698" />
@@ -75,19 +78,19 @@ function ToolOptions({ studio }: {studio: Studio;}) {
   if (t === "fill") {
     return (
       <div className="flex items-center gap-ds-lg" data-oid="44fb5545d4" data-oid-component-root="true">
-        <Range label="Tolerance" value={studio.fillTolerance} min={0} max={255} format={(v) => `${v}`} onChange={studio.setFillTolerance} />
+        <Range label="Tolerance" value={studio.fillTolerance} min={0} max={255} onChange={studio.setFillTolerance} />
         <p className="type-caption text-muted-foreground" data-oid="6b20576528">LIVE PAINT · EACH CLICK MAKES A VECTOR SHAPE ON A VECTOR LAYER</p>
       </div>);
 
   }
   if (t === "select" || t === "direct" || t === "move" || t === "lasso" || t === "transform") {
     return (
-      <div className="flex items-center gap-ds-sm" data-oid="ea401170a0" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="element:p|expression:a2c8264db307|element:button|element:button|element:button|element:p">
+      <div className="flex items-center gap-ds-sm" data-oid="ea401170a0" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="element:p|expression:442a48d8b29d|element:button|element:button|element:button|element:p">
         <p className="type-caption text-muted-foreground" data-oid="d702681c17">
           <output className="text-accent" data-oid="f0e5a67eba">{studio.selection.length}</output> SELECTED
         </p>
         {studio.selection.length > 0 &&
-        <Range label="Stroke" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={120} format={(v) => `${v}px`} onPointerDown={studio.beginSelectionEdit} onChange={(v) => studio.setStrokeWidth(v, false)} />
+        <Range label="Stroke" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={120} suffix="px" onPointerDown={studio.beginSelectionEdit} onChange={(v) => studio.setStrokeWidth(v, false)} onType={(v) => studio.setStrokeWidth(v, true)} />
         }
         <button type="button" className={barBtn} onClick={studio.selectAll} data-oid="b053a94375" data-oid-classname-dynamic="true">
           Select all

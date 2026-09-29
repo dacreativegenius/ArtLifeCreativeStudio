@@ -94,6 +94,11 @@ function send(command) {
 const item = (label, command, accelerator) => ({ label, accelerator, registerAccelerator: false, click: () => send(command) })
 
 function buildMenu() {
+  // Windows / Linux: no menu bar at all — every command lives in the app's own toolbar + shortcuts.
+  if (!isMac) {
+    Menu.setApplicationMenu(null)
+    return
+  }
   const template = [
     ...(isMac
       ? [{ label: APP_NAME, submenu: [{ role: "about" }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] }]
@@ -193,6 +198,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: "#222226",
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),

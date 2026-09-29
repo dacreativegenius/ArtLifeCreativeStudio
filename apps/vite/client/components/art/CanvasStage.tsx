@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Scissors, Trash2 } from "lucide-react";
 import type { Studio, View } from "./useStudio";
 import {
   DOC_H,
@@ -18,7 +18,9 @@ import {
 import {
   anchorsOf,
   drawItem,
+  eraseFromPath,
   floodMask,
+  strokeToBlob,
   hitItem,
   isVectorBrush,
   itemBounds,
@@ -1531,6 +1533,39 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         if (b.w - it.size < 2 && b.h - it.size < 2) return;
       }
       const layerId = liveLayer.current;
+      // Pressure Ink = blob brush: the finished stroke becomes a filled, tapered vector shape
+      if (it.kind === "stroke" && it.brush === "vector-pressure") {
+        const blob = strokeToBlob(it);
+        if (blob) {
+          st.commit((ls) => ls.map((l) => l.id === layerId ? { ...l, items: [...l.items, blob] } : l));
+          return;
+        }
+      }
+      // Eraser on a vector layer cuts filled shapes for real (no hidden, blank anchors left behind)
+      if (it.kind === "erase") {
+        const layer = st.layers.find((l) => l.id === layerId);
+        if (layer && layer.type === "vector") {
+          const eb = itemBounds(it);
+          let keepMark = false;
+          const removed: string[] = [];
+          const items: Item[] = [];
+          for (const x of layer.items) {
+            if (x.kind === "path" && x.fill && !x.stroke && !x.hidden) {
+              const r = eraseFromPath(x, it);
+              if (r === undefined) items.push(x);else
+              if (r) items.push(r);else
+              removed.push(x.id);
+            } else {
+              items.push(x);
+              if (x.kind !== "erase" && !x.hidden && rectsIntersect(itemBounds(x), eb)) keepMark = true;
+            }
+          }
+          if (keepMark) items.push(it);
+          st.commit((ls) => ls.map((l) => l.id === layerId ? { ...l, items } : l));
+          if (removed.length) st.setSelection((s) => s.filter((id) => !removed.includes(id)));
+          return;
+        }
+      }
       st.commit((ls) => ls.map((l) => l.id === layerId ? { ...l, items: [...l.items, it] } : l));
       return;
     }
@@ -1595,7 +1630,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     <section className="relative flex min-w-0 flex-1 flex-col" data-oid="b1527df8cb" data-oid-component-root="true">
       <div
         ref={wrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:4c33c76a57eb">
+        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:a5460c4fa208">
         
         <canvas
           ref={canvasRef}
@@ -1628,6 +1663,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             </p>
             <button type="button" onClick={studio.deselect} className="h-9 rounded-md px-ds-md text-label text-foreground hover:bg-secondary" data-oid="0509e56131">
               Deselect
+            </button>
+            <button type="button" onClick={studio.cutSelection} className="inline-flex h-9 items-center gap-ds-xs rounded-md px-ds-md text-label text-foreground hover:bg-secondary" data-oid="0c4848ffbf">
+              <Scissors className="h-4 w-4" data-oid="e83bf1e8aa" /> Cut
             </button>
             <button type="button" onClick={studio.deleteSelection} className="inline-flex h-9 items-center gap-ds-xs rounded-md bg-destructive px-ds-md text-label font-semibold text-destructive-foreground hover:opacity-90" data-oid="28c3865609">
               <Trash2 className="h-4 w-4" data-oid="16d8e1c405" /> Delete

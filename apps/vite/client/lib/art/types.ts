@@ -97,6 +97,8 @@ export interface PathItem {
   fill: string | null
   opacity: number
   evenOdd?: boolean
+  /** Pressure Ink blob shape: a filled, tapered stroke — colour edits recolour its fill. */
+  blob?: boolean
   hidden?: boolean
 }
 

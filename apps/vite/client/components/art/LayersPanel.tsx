@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Brush, ChevronDown, ChevronRight, ChevronUp, Circle, Copy, Eraser, Eye, EyeOff, Image as ImageIcon, Lock, PaintBucket, PenTool, Pencil, Slash, Square, Trash2, Unlock } from "lucide-react";
 import type { Studio } from "./useStudio";
 import { Panel, iconBtn } from "./Panel";
+import { NumInput } from "./NumInput";
 import type { Item, Layer } from "../../lib/art/types";
 import { BRUSHES } from "../../lib/art/types";
 import { DOC_W } from "../../lib/art/types";
@@ -94,10 +95,11 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
       
       {active &&
       <div className="mb-ds-sm flex items-center gap-ds-sm" data-oid="9a8bfd1996">
-          <label className="flex flex-1 items-center gap-ds-sm text-label text-muted-foreground" data-oid="b327b2b2b4">
-            Opacity
+          <div className="flex flex-1 items-center gap-ds-sm text-label text-muted-foreground" data-oid="b327b2b2b4">
+            <span data-oid="08bda14904">Opacity</span>
             <input
             type="range"
+            aria-label="Layer opacity"
             min={0}
             max={100}
             value={Math.round(active.opacity * 100)}
@@ -105,8 +107,8 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
             onChange={(e) => studio.updateLayer(active.id, { opacity: Number(e.target.value) / 100 }, false)}
             className="flex-1 accent-primary" data-oid="106562dcac" />
           
-            <output className="w-9 text-right type-caption text-foreground" data-oid="f40f5317fe" data-oid-text-editable="false" data-oid-text-source="expression:14e8080d7e0e|text">{Math.round(active.opacity * 100)}%</output>
-          </label>
+            <NumInput label="Layer opacity" value={Math.round(active.opacity * 100)} min={0} max={100} suffix="%" onChange={(v) => studio.updateLayer(active.id, { opacity: v / 100 })} />
+          </div>
           <button type="button" aria-label="Clear layer" title="Clear layer" className={iconBtn} onClick={() => studio.clearLayer(active.id)} data-oid="16e66ae1dd" data-oid-classname-dynamic="true">
             <Eraser className="h-3.5 w-3.5" data-oid="cd3daf42cf" />
           </button>

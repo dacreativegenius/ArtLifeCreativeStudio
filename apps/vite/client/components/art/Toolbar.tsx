@@ -1,6 +1,8 @@
 import {
   ArrowLeftRight,
   Brush,
+  ClipboardPaste,
+  Scissors,
   Circle,
   Eraser,
   Hand,
@@ -109,6 +111,32 @@ export function Toolbar({ studio }: {studio: Studio;}) {
           </button>
           <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="51ab39cfe9">
             Delete selection <kbd className="ml-ds-xs type-caption text-primary" data-oid="76362c3f03">Del</kbd>
+          </span>
+        </div>
+        <div className="group relative" data-oid="fa0467257c">
+          <button
+            type="button"
+            aria-label="Cut selection (Ctrl+X)"
+            disabled={!studio.selection.length}
+            onClick={studio.cutSelection}
+            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary disabled:opacity-35" data-oid="bcdd11a641">
+            <Scissors className="h-[18px] w-[18px]" strokeWidth={1.75} data-oid="b97eaccded" />
+          </button>
+          <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="a2316d26b3">
+            Cut <kbd className="ml-ds-xs type-caption text-primary" data-oid="f0ce1921b5">Ctrl X</kbd>
+          </span>
+        </div>
+        <div className="group relative" data-oid="ecd55565da">
+          <button
+            type="button"
+            aria-label="Paste (Ctrl+V)"
+            disabled={!studio.canPaste}
+            onClick={studio.paste}
+            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary disabled:opacity-35" data-oid="ea25099821">
+            <ClipboardPaste className="h-[18px] w-[18px]" strokeWidth={1.75} data-oid="48a03fe502" />
+          </button>
+          <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="a2dabd6de1">
+            Paste <kbd className="ml-ds-xs type-caption text-primary" data-oid="cb7cb36456">Ctrl V</kbd>
           </span>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeftRight, Ban, Pipette } from "lucide-react";
 import type { Studio } from "./useStudio";
 import { Panel } from "./Panel";
+import { NumInput } from "./NumInput";
 import { hexToHsv, hexToRgb, hsvToHex, normalizeHex, type HSV } from "../../lib/art/color";
 
 const SIZE = 216;
@@ -133,7 +134,7 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
 
   return (
     <Panel title="Colour">
-      <div className="flex flex-col items-center gap-ds-md" data-oid="d538ad3655" data-oid-text-editable="false" data-oid-text-source="element:div|element:div|element:label|expression:4cdb1b027ba1|element:div|element:dl">
+      <div className="flex flex-col items-center gap-ds-md" data-oid="d538ad3655" data-oid-text-editable="false" data-oid-text-source="element:div|element:div|element:div|expression:4cdb1b027ba1|element:div|element:dl">
         <div className="relative h-[216px] w-[216px]" data-oid="7ac676baf5">
           <canvas
             ref={setCanvasEl}
@@ -227,10 +228,11 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
         </div>
 
         {/* Stroke weight */}
-        <label className="flex w-full items-center gap-ds-sm text-label text-muted-foreground" data-oid="395f8afd61">
+        <div className="flex w-full items-center gap-ds-sm text-label text-muted-foreground" data-oid="395f8afd61">
           <span className="w-[74px] shrink-0" data-oid="b50dac3e31">Stroke weight</span>
           <input
             type="range"
+            aria-label="Stroke weight"
             min={0}
             max={120}
             value={studio.strokeEnabled ? studio.shapeStroke : 0}
@@ -238,8 +240,8 @@ export function ColorPanel({ studio }: {studio: Studio;}) {
             onChange={(e) => studio.setStrokeWidth(Number(e.target.value), false)}
             className="h-1 min-w-0 flex-1 cursor-pointer accent-primary" data-oid="3b43485597" />
           
-          <output className="w-10 text-right type-caption text-foreground" data-oid="bfdf65cce5" data-oid-text-editable="false" data-oid-text-source="expression:b692506620af|text">{studio.strokeEnabled ? studio.shapeStroke : 0}px</output>
-        </label>
+          <NumInput label="Stroke weight" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={500} suffix="px" onChange={(v) => studio.setStrokeWidth(v, true)} />
+        </div>
         {hasSelection &&
         <p className="-mt-ds-sm w-full type-caption text-accent" data-oid="6e6199f99e" data-oid-text-editable="false" data-oid-text-source="text|expression:a9de39460c7e|text|expression:b0271ec5f9e3">EDITING {studio.selection.length} SELECTED · {target === "stroke" ? "STROKE" : "FILL"}</p>
         }

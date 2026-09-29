@@ -1,22 +1,26 @@
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { ArrowLeftRight, X } from "lucide-react";
 import type { Studio } from "./useStudio";
 
-type Preset = {w: number;h: number;label: string;};
+const MIN = 16;
+const MAX = 8000;
 
-const SQUARE: Preset = { w: 1200, h: 1200, label: "Square" };
-const TABLOID: Preset = { w: 3300, h: 5100, label: "11 × 17 in" };
-const PORTRAIT: Preset = { w: 1080, h: 1920, label: "Portrait HD" };
-const LANDSCAPE: Preset = { w: 1920, h: 1080, label: "Landscape HD" };
+const toNum = (s: string) => {
+  const n = Math.round(Number(s));
+  return Number.isFinite(n) ? n : NaN;
+};
 
 export function NewProjectDialog({ studio }: {studio: Studio;}) {
-  const [preset, setPreset] = useState<Preset>(SQUARE);
   const [name, setName] = useState("Untitled");
+  const [w, setW] = useState("1920");
+  const [h, setH] = useState("1080");
   const open = studio.newDialogOpen;
 
   useEffect(() => {
     if (!open) return;
     setName("Untitled");
+    setW(String(studio.docSize.w));
+    setH(String(studio.docSize.h));
     const esc = (e: KeyboardEvent) => e.key === "Escape" && studio.setNewDialogOpen(false);
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
@@ -25,8 +29,18 @@ export function NewProjectDialog({ studio }: {studio: Studio;}) {
 
   if (!open) return null;
 
+  const wn = toNum(w);
+  const hn = toNum(h);
+  const wOk = wn >= MIN && wn <= MAX;
+  const hOk = hn >= MIN && hn <= MAX;
+  const valid = wOk && hOk;
+  // proportional preview box (max 72px on the long side)
+  const ratio = valid ? wn / hn : 1;
+  const pw = ratio >= 1 ? 72 : Math.max(8, 72 * ratio);
+  const ph = ratio >= 1 ? Math.max(8, 72 / ratio) : 72;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/70 p-ds-xl backdrop-blur-sm" onPointerDown={() => studio.setNewDialogOpen(false)} data-oid="ec4a46e9ab" data-oid-component-root="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/70 p-ds-lg backdrop-blur-sm" onPointerDown={() => studio.setNewDialogOpen(false)} data-oid="7db1979644" data-oid-component-root="true">
       <form
         role="dialog"
         aria-modal="true"
@@ -34,95 +48,73 @@ export function NewProjectDialog({ studio }: {studio: Studio;}) {
         onPointerDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
-          studio.newDocument(preset.w, preset.h, name.trim() || "Untitled");
+          if (valid) studio.newDocument(wn, hn, name.trim() || "Untitled");
         }}
-        className="w-[520px] shrink-0 rounded-xl border border-border bg-card p-ds-xl shadow-2xl" data-oid="3126af39cd">
+        className="w-full max-w-[440px] shrink-0 rounded-xl border border-border bg-card p-ds-xl shadow-2xl" data-oid="d2ec69e3d8">
         
-        <div className="flex items-start justify-between gap-ds-md" data-oid="5f355cfe45">
-          <div data-oid="7313dcf6a1">
-            <h2 id="new-project-title" className="type-display text-foreground" data-oid="30c8d6e5f1">New project</h2>
-            <p className="mt-ds-xs type-body text-muted-foreground" data-oid="d2a8609b56">Choose a canvas size. The current drawing is replaced — save it as .dtm first to keep it.</p>
+        <div className="flex items-start justify-between gap-ds-md" data-oid="44b13bde67">
+          <div data-oid="41996b50da">
+            <h2 id="new-project-title" className="type-display text-foreground" data-oid="b183eb77a0">New project</h2>
+            <p className="mt-ds-xs type-body text-muted-foreground" data-oid="2a2cd9b1d9">Type any canvas size in pixels. The current drawing is replaced — save it as .dtm first to keep it.</p>
           </div>
-          <button type="button" aria-label="Close" onClick={() => studio.setNewDialogOpen(false)} className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" data-oid="76e68af970">
-            <X className="h-4 w-4" data-oid="10e1e843c7" />
+          <button type="button" aria-label="Close" onClick={() => studio.setNewDialogOpen(false)} className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" data-oid="3e973aa088">
+            <X className="h-4 w-4" data-oid="01cd0980b1" />
           </button>
         </div>
 
-        <div className="ds-field mt-ds-lg" data-oid="2e653789b9">
-          <label htmlFor="project-name" className="ds-field-label" data-oid="8fbb049c7f">Project name</label>
-          <input id="project-name" className="ds-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus data-oid="e1d5180192" />
+        <div className="ds-field mt-ds-lg" data-oid="649344f639">
+          <label htmlFor="project-name" className="ds-field-label" data-oid="2748f43c03">Project name</label>
+          <input id="project-name" className="ds-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus data-oid="f9ca7c344d" />
         </div>
 
-        <p className="mt-ds-lg mb-ds-sm type-label text-foreground" data-oid="5bca5ef9a8">Canvas size</p>
-        <div role="radiogroup" aria-label="Canvas size" className="grid grid-cols-2 gap-ds-sm" data-oid="d4c595f624">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={preset === SQUARE}
-            onClick={() => setPreset(SQUARE)}
-            className="flex items-center gap-ds-md rounded-lg border border-border bg-background px-ds-md py-ds-md text-left hover:border-muted-foreground aria-checked:border-primary aria-checked:bg-secondary" data-oid="1cb0dac857">
-            
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-card" data-oid="36862fe764">
-              <span className="h-[34px] w-[34px] rounded-[2px] bg-foreground" data-oid="eb8eec9dc7" />
-            </span>
-            <span className="flex flex-col" data-oid="27c8d3f03b">
-              <span className="text-label font-semibold text-foreground" data-oid="f48304f666">Square</span>
-              <span className="type-caption text-muted-foreground" data-oid="f97afd2335">1200 × 1200 px</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={preset === TABLOID}
-            onClick={() => setPreset(TABLOID)}
-            className="flex items-center gap-ds-md rounded-lg border border-border bg-background px-ds-md py-ds-md text-left hover:border-muted-foreground aria-checked:border-primary aria-checked:bg-secondary" data-oid="14e4de40dd">
-            
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-card" data-oid="2fe7f1b20e">
-              <span className="h-[34px] w-[22px] rounded-[2px] bg-foreground" data-oid="04419a5ea5" />
-            </span>
-            <span className="flex flex-col" data-oid="5411cc77c9">
-              <span className="text-label font-semibold text-foreground" data-oid="7f8596b84c">Tabloid 11 × 17 in</span>
-              <span className="type-caption text-muted-foreground" data-oid="d7bcd60030">300 dpi · 3300 × 5100 px</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={preset === PORTRAIT}
-            onClick={() => setPreset(PORTRAIT)}
-            className="flex items-center gap-ds-md rounded-lg border border-border bg-background px-ds-md py-ds-md text-left hover:border-muted-foreground aria-checked:border-primary aria-checked:bg-secondary" data-oid="c01a434e14">
-            
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-card" data-oid="cfb1ad6daf">
-              <span className="h-[34px] w-[19px] rounded-[2px] bg-foreground" data-oid="50062a5dd4" />
-            </span>
-            <span className="flex flex-col" data-oid="75cde3255b">
-              <span className="text-label font-semibold text-foreground" data-oid="e8c141e807">Portrait HD</span>
-              <span className="type-caption text-muted-foreground" data-oid="e96e24973e">1080 × 1920 px</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={preset === LANDSCAPE}
-            onClick={() => setPreset(LANDSCAPE)}
-            className="flex items-center gap-ds-md rounded-lg border border-border bg-background px-ds-md py-ds-md text-left hover:border-muted-foreground aria-checked:border-primary aria-checked:bg-secondary" data-oid="48292677e6">
-            
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-card" data-oid="df999a822e">
-              <span className="h-[19px] w-[34px] rounded-[2px] bg-foreground" data-oid="709029a636" />
-            </span>
-            <span className="flex flex-col" data-oid="3dcb66fd9e">
-              <span className="text-label font-semibold text-foreground" data-oid="df5e977114">Landscape HD</span>
-              <span className="type-caption text-muted-foreground" data-oid="d6b8f7d712">1920 × 1080 px</span>
-            </span>
-          </button>
+        <div className="mt-ds-lg flex items-end gap-ds-md" data-oid="b80c7bc2e0">
+          <div className="grid h-[84px] w-[84px] shrink-0 place-items-center rounded-lg border border-border bg-background" data-oid="7a47778185">
+            <span className="rounded-[2px] bg-foreground" style={{ width: pw, height: ph }} data-oid="688cbde84b" data-oid-style-dynamic="width,height" />
+          </div>
+          <div className="flex min-w-0 flex-1 items-end gap-ds-sm" data-oid="da33368848">
+            <div className="ds-field min-w-0 flex-1" data-oid="98ce76adb2">
+              <label htmlFor="canvas-w" className="ds-field-label" data-oid="d694795553">Width (px)</label>
+              <input
+                id="canvas-w"
+                className="ds-input font-caption aria-[invalid=true]:border-destructive"
+                inputMode="numeric"
+                aria-invalid={!wOk}
+                value={w}
+                onChange={(e) => setW(e.target.value.replace(/[^\d]/g, ""))} data-oid="7ccb6bda16" />
+            </div>
+            <button
+              type="button"
+              aria-label="Swap width and height"
+              title="Swap width and height"
+              onClick={() => {
+                setW(h);
+                setH(w);
+              }}
+              className="mb-[2px] grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground" data-oid="0abb16ad06">
+              <ArrowLeftRight className="h-4 w-4" data-oid="77cc7c7f52" />
+            </button>
+            <div className="ds-field min-w-0 flex-1" data-oid="ca5cc4c5e5">
+              <label htmlFor="canvas-h" className="ds-field-label" data-oid="68f71ac3f2">Height (px)</label>
+              <input
+                id="canvas-h"
+                className="ds-input font-caption aria-[invalid=true]:border-destructive"
+                inputMode="numeric"
+                aria-invalid={!hOk}
+                value={h}
+                onChange={(e) => setH(e.target.value.replace(/[^\d]/g, ""))} data-oid="57eb9e0075" />
+            </div>
+          </div>
         </div>
+        <p className="mt-ds-sm type-caption text-muted-foreground aria-[invalid=true]:text-destructive" aria-invalid={!valid} data-oid="b94495255a">
+          {valid ? `${wn} × ${hn} PX · ${(wn * hn / 1e6).toFixed(1)} MP` : `USE ${MIN}–${MAX} PX FOR EACH SIDE`}
+        </p>
 
-        <div className="mt-ds-xl flex items-center justify-end gap-ds-sm" data-oid="8a94d0c473">
-          <button type="button" className="ds-button ds-button-secondary" onClick={() => studio.setNewDialogOpen(false)} data-oid="07215b5ef9">
+        <div className="mt-ds-xl flex items-center justify-end gap-ds-sm" data-oid="d11fe27af7">
+          <button type="button" className="ds-button ds-button-secondary" onClick={() => studio.setNewDialogOpen(false)} data-oid="c87a2bbefd">
             Cancel
           </button>
-          <button type="submit" className="ds-button ds-button-primary" data-oid="bdf150575c" data-oid-text-editable="false" data-oid-text-source="text|expression:73dbe0b7a2c3|text|expression:9a99b3ce7785|text|expression:7cabd0661ed7">
-            Create {preset.label} · {preset.w} × {preset.h}
+          <button type="submit" disabled={!valid} className="ds-button ds-button-primary disabled:opacity-40" data-oid="3ab39fae6b">
+            Create canvas
           </button>
         </div>
       </form>
