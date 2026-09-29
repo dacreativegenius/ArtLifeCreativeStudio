@@ -14,7 +14,8 @@
     "dev": "electron . --dev",
     "dist": "npm run icons && npm run build:web && electron-builder",
     "dist:mac": "npm run icons && npm run build:web && electron-builder --mac",
-    "dist:win": "npm run icons && npm run build:web && electron-builder --win",
+    "dist:win": "npm run icons && npm run build:web && electron-builder --win nsis portable",
+    "dist:portable": "npm run icons && npm run build:web && electron-builder --win portable",
     "dist:linux": "npm run icons && npm run build:web && electron-builder --linux"
   },
   "devDependencies": {
@@ -60,8 +61,14 @@
       "title": "Art Life Creative Studio"
     },
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "Art Life Creative Studio ${version} Portable.exe"
     },
     "nsis": {
       "oneClick": false,
