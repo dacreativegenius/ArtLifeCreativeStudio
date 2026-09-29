@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import type { Studio, View } from "./useStudio";
 import {
   DOC_H,
@@ -38,8 +39,11 @@ import {
 "../../lib/art/render";
 import { readCssColor, rgbToHex } from "../../lib/art/color";
 import {
+  cornerWidgets,
   editModel,
   modelDelete,
+  radiusFromBisector,
+  roundCorner,
   modelDragAnchor,
   modelHalfWidth,
   modelInsert,
@@ -65,6 +69,7 @@ type Drag =
 {type: "handle";id: string;sub: number;idx: number;which: "in" | "out";orig: PathItem;moved: boolean;free?: boolean;} |
 {type: "convert";id: string;sub: number;idx: number;model: EditModel;sx0: number;sy0: number;moved: boolean;} |
 {type: "sample";} |
+{type: "corner";id: string;sub: number;idx: number;orig: PathItem;moved: boolean;r: number;} |
 {type: "pen";} |
 {type: "rotate";cx: number;cy: number;a0: number;angle: number;box: Rect;orig: Map<string, Item>;moved: boolean;};
 
@@ -73,6 +78,9 @@ type Gesture = {m0x: number;m0y: number;d0: number;a0: number;v0: View;};
 
 const ROT_OFFSET = 28;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const CORNER_OFFSET = 16; // px inside the corner along the bisector
+/** Pencil strokes (and the eraser marks cutting them) act as one sketch element per pencil layer. */
+const isPencilMark = (it: Item) => it.kind === "stroke" && !isVectorBrush(it.brush) || it.kind === "erase";
 
 function replaceItems(ls: Layer[], map: Map<string, Item>): Layer[] {
   return ls.map((l) => l.items.some((i) => map.has(i.id)) ? { ...l, items: l.items.map((i) => map.get(i.id) ?? i) } : l);
@@ -459,15 +467,54 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             ctx.fillRect(X(a.x) - 3.5, Y(a.y) - 3.5, 7, 7);
             ctx.strokeRect(X(a.x) - 3.5, Y(a.y) - 3.5, 7, 7);
           });
-        } else {
+        } else if (!(sel.length > 1 && isPencilMark(it))) {
           const b = itemBounds(it);
           ctx.setLineDash(sel.length > 1 ? [3, 3] : []);
           ctx.strokeRect(X(b.x), Y(b.y), b.w * zoom, b.h * zoom);
           ctx.setLineDash([]);
         }
       }
+      // one box around a pencil layer's sketch group
+      const pencilSel = sel.filter((it) => it.kind === "stroke" && isPencilMark(it));
+      if (pencilSel.length > 1 && !(st.tool === "transform" || st.tool === "select" || st.tool === "move")) {
+        const pb = unionBounds(pencilSel)!;
+        ctx.setLineDash([5, 3]);
+        ctx.strokeRect(X(pb.x), Y(pb.y), pb.w * zoom, pb.h * zoom);
+        ctx.setLineDash([]);
+      }
+      // live-corner widgets: drag the little circle to round a sharp corner
+      if (st.tool === "direct" || st.tool === "penConvert") {
+        for (const it of sel) {
+          const cm = editModel(it);
+          if (!cm || cm.kind !== "path") continue;
+          for (const w of cornerWidgets(cm.item)) {
+            const cx = X(w.x) + w.b.x * CORNER_OFFSET;
+            const cy = Y(w.y) + w.b.y * CORNER_OFFSET;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#ffffff";
+            ctx.fill();
+            ctx.strokeStyle = acc;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx, cy, 1.6, 0, Math.PI * 2);
+            ctx.fillStyle = acc;
+            ctx.fill();
+          }
+        }
+      }
       const u = unionBounds(sel);
       const dr = drag.current;
+      if (dr?.type === "corner" && dr.moved) {
+        const label = `R ${Math.round(dr.r)} px`;
+        const lp = toDoc(pointer.current.sx, pointer.current.sy);
+        ctx.font = "11px 'JetBrains Mono', monospace";
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = acc;
+        ctx.fillRect(X(lp.x) + 12, Y(lp.y) - 22, tw + 10, 18);
+        ctx.fillStyle = "#0f0f12";
+        ctx.fillText(label, X(lp.x) + 17, Y(lp.y) - 9);
+      }
       if (dr?.type === "rotate") {
         const b = dr.box;
         const corners = [
@@ -737,6 +784,40 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     it.points.push({ x: nx, y: ny, p });
   };
 
+  /** Ids of the element an item belongs to: a pencil stroke selects its whole layer's sketch. */
+  const groupOf = (id: string, layerId?: string) => {
+    for (const l of S.current.layers) {
+      if (layerId && l.id !== layerId) continue;
+      const it = l.items.find((i) => i.id === id);
+      if (!it) continue;
+      if (l.type === "pencil" && it.kind === "stroke" && isPencilMark(it)) return l.items.filter((i) => isPencilMark(i) && !i.hidden).map((i) => i.id);
+      return [id];
+    }
+    return [id];
+  };
+
+  const expandGroups = (ids: string[]) => {
+    const out = new Set(ids);
+    for (const l of S.current.layers) {
+      if (l.type !== "pencil") continue;
+      if (!l.items.some((i) => out.has(i.id) && i.kind === "stroke" && isPencilMark(i))) continue;
+      for (const i of l.items) if (isPencilMark(i) && !i.hidden) out.add(i.id);
+    }
+    return Array.from(out);
+  };
+
+  const cornerHit = (sx: number, sy: number) => {
+    const zoom = S.current.view.zoom;
+    for (const it of selectedItems()) {
+      const cm = editModel(it);
+      if (!cm || cm.kind !== "path") continue;
+      for (const w of cornerWidgets(cm.item)) {
+        if (near(w.x + w.b.x * CORNER_OFFSET / zoom, w.y + w.b.y * CORNER_OFFSET / zoom, sx, sy, 8)) return { id: it.id, sub: w.sub, idx: w.idx, orig: cm.item };
+      }
+    }
+    return null;
+  };
+
   const selectedItems = () => {
     const ids = new Set(S.current.selection);
     const out: Item[] = [];
@@ -999,8 +1080,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       if (hit) {
         let sel = st.selection;
         const id = hit.item.id;
-        if (e.shiftKey) sel = sel.includes(id) ? sel.filter((i) => i !== id) : [...sel, id];else
-        if (!sel.includes(id)) sel = [id];
+        const g = groupOf(id, hit.layerId);
+        if (e.shiftKey) sel = sel.includes(id) ? sel.filter((i) => !g.includes(i)) : Array.from(new Set([...sel, ...g]));else
+        if (!sel.includes(id)) sel = g;
         st.setSelection(sel);
         st.setActiveLayerId(hit.layerId);
         if (sel.includes(id)) drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false };
@@ -1093,6 +1175,13 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       case "penDelete":
       case "penConvert":{
           if (tool === "penConvert") {
+            const ch = cornerHit(sx, sy);
+            if (ch) {
+              drag.current = { type: "corner", ...ch, moved: false, r: 0 };
+              break;
+            }
+          }
+          if (tool === "penConvert") {
             // handles can sit away from the path, so check the selected paths' handles first
             let grabbed = false;
             for (const it of selectedItems()) {
@@ -1182,6 +1271,11 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           break;
         }
       case "direct":{
+          const ch = cornerHit(sx, sy);
+          if (ch) {
+            drag.current = { type: "corner", ...ch, moved: false, r: 0 };
+            break;
+          }
           const a = anchorHit(sx, sy);
           if (a) {
             drag.current = { type: "anchor", ...a, moved: false };
@@ -1196,7 +1290,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           const hit = hitTop(st.layers, x, y, tol);
           if (hit) {
             const id = hit.item.id;
-            const sel = e.shiftKey ? Array.from(new Set([...st.selection, id])) : [id];
+            const g = groupOf(id, hit.layerId);
+            const sel = e.shiftKey ? Array.from(new Set([...st.selection, ...g])) : g;
             st.setSelection(sel);
             st.setActiveLayerId(hit.layerId);
             drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false };
@@ -1328,6 +1423,16 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             st.setLayers((ls) => replaceItems(ls, map));
             break;
           }
+        case "corner":{
+            if (!d.moved) {
+              st.snapshot();
+              d.moved = true;
+            }
+            d.r = radiusFromBisector(d.orig, d.sub, d.idx, x, y);
+            const next = roundCorner(d.orig, d.sub, d.idx, d.r);
+            st.setLayers((ls) => replaceItems(ls, new Map([[d.id, next]])));
+            break;
+          }
         case "anchor":{
             if (!d.moved) {
               st.snapshot();
@@ -1441,12 +1546,12 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       const r = { x: Math.min(d.x0, d.x1), y: Math.min(d.y0, d.y1), w: Math.abs(d.x1 - d.x0), h: Math.abs(d.y1 - d.y0) };
       if (r.w * st.view.zoom < 3 && r.h * st.view.zoom < 3) return;
       const ids = selectable((it) => rectsIntersect(itemBounds(it), r));
-      st.setSelection(d.additive ? Array.from(new Set([...d.base, ...ids])) : ids);
+      st.setSelection(expandGroups(d.additive ? [...d.base, ...ids] : ids));
     }
     if (d.type === "lasso") {
       if (d.pts.length < 3) return;
       const ids = selectable((it) => outlineOf(it).pts.some((p) => pointInPoly(p.x, p.y, d.pts)));
-      st.setSelection(d.additive ? Array.from(new Set([...d.base, ...ids])) : ids);
+      st.setSelection(expandGroups(d.additive ? [...d.base, ...ids] : ids));
     }
     if (d.type === "anchor") hoverAnchor.current = null;
   };
@@ -1468,6 +1573,20 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   "crosshair";
 
   const zoomPct = Math.round(studio.view.zoom * 100);
+  // a pencil layer's sketch counts as one element
+  let selectionCount = 0;
+  if (studio.selection.length) {
+    const ids = new Set(studio.selection);
+    for (const l of studio.layers) {
+      let sketch = false;
+      for (const it of l.items) {
+        if (!ids.has(it.id) || it.kind === "erase") continue;
+        if (l.type === "pencil" && isPencilMark(it)) sketch = true;else
+        selectionCount++;
+      }
+      if (sketch) selectionCount++;
+    }
+  }
   let rotDeg = Math.round(studio.view.rot * 180 / Math.PI) % 360;
   if (rotDeg > 180) rotDeg -= 360;
   if (rotDeg <= -180) rotDeg += 360;
@@ -1476,7 +1595,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     <section className="relative flex min-w-0 flex-1 flex-col" data-oid="b1527df8cb" data-oid-component-root="true">
       <div
         ref={wrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e">
+        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:c0ee4cae0fa2">
         
         <canvas
           ref={canvasRef}
@@ -1501,6 +1620,19 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         <p className="pointer-events-none absolute left-1/2 top-ds-lg -translate-x-1/2 rounded-md border border-border bg-popover px-ds-md py-ds-xs text-label text-popover-foreground shadow-lg" data-oid="70f59d95b1">
             {studio.message}
           </p>
+        }
+        {studio.selection.length > 0 &&
+        <div className="absolute bottom-ds-md left-1/2 z-10 flex -translate-x-1/2 items-center gap-ds-xs rounded-lg border border-border bg-popover p-ds-xs shadow-xl" data-oid="2ce754afae">
+            <p className="px-ds-sm type-caption text-muted-foreground" data-oid="e77d04719e">
+              <output className="text-accent" data-oid="d7f47ddfcd">{selectionCount}</output> SELECTED
+            </p>
+            <button type="button" onClick={studio.deselect} className="h-9 rounded-md px-ds-md text-label text-foreground hover:bg-secondary" data-oid="0509e56131">
+              Deselect
+            </button>
+            <button type="button" onClick={studio.deleteSelection} className="inline-flex h-9 items-center gap-ds-xs rounded-md bg-destructive px-ds-md text-label font-semibold text-destructive-foreground hover:opacity-90" data-oid="28c3865609">
+              <Trash2 className="h-4 w-4" data-oid="16d8e1c405" /> Delete
+            </button>
+          </div>
         }
       </div>
       <footer className="flex h-7 items-center gap-ds-lg border-t border-border bg-card px-ds-md type-caption text-muted-foreground" data-oid="9c10260a07">

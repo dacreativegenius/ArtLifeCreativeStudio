@@ -94,12 +94,13 @@ function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem) {
       a = s.opacity * 0.85
     }
     const rad = Math.max(0.4, w / 2)
-    const grains = Math.max(2, Math.round(rad * 1.8))
+    const grains = Math.max(2, Math.round(rad * (pressure ? 1.8 : 2.2)))
     for (let g = 0; g < grains; g++) {
       const ang = rnd() * Math.PI * 2
-      const dist = Math.sqrt(rnd()) * rad
-      const gs = 0.55 + rnd() * Math.max(0.5, rad * 0.35)
-      ctx.globalAlpha = Math.min(1, a * (0.3 + rnd() * 0.7))
+      // Tech Pencil: tight scatter — grains hug the centre line, smaller and more even
+      const dist = pressure ? Math.sqrt(rnd()) * rad : rnd() * rad * 0.7
+      const gs = pressure ? 0.55 + rnd() * Math.max(0.5, rad * 0.35) : 0.45 + rnd() * Math.max(0.3, rad * 0.18)
+      ctx.globalAlpha = Math.min(1, a * (pressure ? 0.3 + rnd() * 0.7 : 0.6 + rnd() * 0.4))
       ctx.fillRect(x + Math.cos(ang) * dist - gs / 2, y + Math.sin(ang) * dist - gs / 2, gs, gs)
     }
     return rad
@@ -117,6 +118,17 @@ function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem) {
       rad = stamp(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.p + (b.p - a.p) * f, next)
       next += Math.max(0.45, rad * 0.45)
     }
+  }
+  // Tech Pencil: a crisp graphite core under the grain keeps the line sharp
+  if (!pressure && pts.length > 1) {
+    ctx.globalAlpha = s.opacity * 0.55
+    ctx.strokeStyle = s.color
+    ctx.lineWidth = Math.max(0.5, s.size * 0.5)
+    ctx.lineCap = "round"
+    ctx.lineJoin = "round"
+    ctx.beginPath()
+    pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
+    ctx.stroke()
   }
   ctx.globalAlpha = 1
 }

@@ -38,7 +38,7 @@ export default function Index() {
   );
 
   return (
-    <main className="flex h-dvh flex-col overflow-hidden overscroll-none bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] type-body text-foreground" data-oid="02f6af567e" data-oid-component-root="true">
+    <main className="flex h-dvh flex-col overflow-hidden overscroll-none bg-background pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] type-body text-foreground" data-oid="02f6af567e" data-oid-component-root="true">
       <TopBar studio={studio} panelsOpen={panelsOpen} onTogglePanels={() => setPanelsOpen((o) => !o)} />
       <div className="relative flex min-h-0 flex-1" data-oid="981cf0b93e" data-oid-text-editable="false">
         <Toolbar studio={studio} />

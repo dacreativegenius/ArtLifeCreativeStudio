@@ -34,7 +34,7 @@ export function InstallApp() {
 
       {helpOpen &&
       <div className="fixed inset-0 z-[100] flex items-end justify-center bg-background/70 p-ds-md pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm md:items-center" role="dialog" aria-modal="true" aria-labelledby="install-title" data-oid="05c4e1c78f">
-          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-ds-xl shadow-2xl" data-oid="30c4b50757" data-oid-text-editable="false" data-oid-text-source="element:div|expression:54e2f20e0aa0|expression:e1fd66829460|element:button">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-ds-xl shadow-2xl" data-oid="30c4b50757" data-oid-text-editable="false" data-oid-text-source="element:div|expression:f83554cccff5|expression:16bc1385a65c|element:button">
             <div className="flex items-start gap-ds-md" data-oid="6f7e440676">
               <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground" data-oid="1db2eb8c4d">
                 <ArtLifeLogo className="h-7 w-7" />

@@ -13,6 +13,7 @@ import {
   Pipette,
   RotateCw,
   SquareDashed,
+  Trash2,
   Slash,
   Square,
   ZoomIn } from
@@ -95,6 +96,19 @@ export function Toolbar({ studio }: {studio: Studio;}) {
           </button>
           <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="737220095c">
             Deselect <kbd className="ml-ds-xs type-caption text-primary" data-oid="98ee69e2c6">Ctrl D</kbd>
+          </span>
+        </div>
+        <div className="group relative" data-oid="9c50efefb7">
+          <button
+            type="button"
+            aria-label="Delete selection (Delete)"
+            disabled={!studio.selection.length}
+            onClick={studio.deleteSelection}
+            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground disabled:opacity-35" data-oid="e8b4f7a490">
+            <Trash2 className="h-[18px] w-[18px]" strokeWidth={1.75} data-oid="eb306bdacf" />
+          </button>
+          <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="51ab39cfe9">
+            Delete selection <kbd className="ml-ds-xs type-caption text-primary" data-oid="76362c3f03">Del</kbd>
           </span>
         </div>
       </div>

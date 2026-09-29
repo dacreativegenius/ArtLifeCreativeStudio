@@ -111,6 +111,87 @@ export function modelDelete(m: EditModel, sub: number, idx: number): Item | null
   return points.length < 2 ? null : { ...m.item, points }
 }
 
+/* ---------------- Live corners: round a sharp anchor into a curve ---------------- */
+
+export function cornerInfo(p: PathItem, sub: number, idx: number) {
+  const sp = p.subpaths[sub]
+  if (!sp) return null
+  const n = sp.nodes.length
+  const P = sp.nodes[idx]
+  if (!P || !isCorner(P) || n < 2) return null
+  if (!sp.closed && (idx === 0 || idx === n - 1)) return null
+  if (sp.closed && n < 3) return null
+  const A = sp.nodes[(idx - 1 + n) % n]
+  const B = sp.nodes[(idx + 1) % n]
+  const aC = A.ox !== A.x || A.oy !== A.y ? { x: A.ox, y: A.oy } : { x: A.x, y: A.y }
+  const bC = B.ix !== B.x || B.iy !== B.y ? { x: B.ix, y: B.iy } : { x: B.x, y: B.y }
+  const l1 = Math.hypot(aC.x - P.x, aC.y - P.y)
+  const l2 = Math.hypot(bC.x - P.x, bC.y - P.y)
+  if (l1 < 1e-6 || l2 < 1e-6) return null
+  const d1 = { x: (aC.x - P.x) / l1, y: (aC.y - P.y) / l1 }
+  const d2 = { x: (bC.x - P.x) / l2, y: (bC.y - P.y) / l2 }
+  const theta = Math.acos(Math.max(-1, Math.min(1, d1.x * d2.x + d1.y * d2.y)))
+  if (theta < 0.05 || theta > Math.PI - 0.05) return null
+  const bx = d1.x + d2.x
+  const by = d1.y + d2.y
+  const bl = Math.hypot(bx, by) || 1
+  const maxT = 0.5 * Math.min(Math.hypot(A.x - P.x, A.y - P.y), Math.hypot(B.x - P.x, B.y - P.y))
+  return { P, d1, d2, theta, maxT, b: { x: bx / bl, y: by / bl } }
+}
+
+/** All corner anchors that can be rounded, with their inward bisector direction. */
+export function cornerWidgets(p: PathItem) {
+  const out: {sub: number;idx: number;x: number;y: number;b: XY;}[] = []
+  p.subpaths.forEach((sp, s) =>
+    sp.nodes.forEach((n, i) => {
+      const c = cornerInfo(p, s, i)
+      if (c) out.push({ sub: s, idx: i, x: n.x, y: n.y, b: c.b })
+    }),
+  )
+  return out
+}
+
+/** Largest usable radius for a corner (limited by the neighbouring segments). */
+export function maxCornerRadius(p: PathItem, sub: number, idx: number) {
+  const c = cornerInfo(p, sub, idx)
+  return c ? c.maxT * Math.tan(c.theta / 2) : 0
+}
+
+/** Radius that puts the arc's midpoint where the pointer is (distance `m` along the bisector). */
+export function radiusFromBisector(p: PathItem, sub: number, idx: number, x: number, y: number) {
+  const c = cornerInfo(p, sub, idx)
+  if (!c) return 0
+  const m = Math.max(0, (x - c.P.x) * c.b.x + (y - c.P.y) * c.b.y)
+  const s = Math.sin(c.theta / 2)
+  return (m * s) / Math.max(1e-6, 1 - s)
+}
+
+/** Replace a sharp corner with a circular fillet of radius r (two bezier anchors). */
+export function roundCorner(p: PathItem, sub: number, idx: number, r: number): PathItem {
+  const c = cornerInfo(p, sub, idx)
+  if (!c || r <= 0.01) return p
+  const { P, d1, d2, theta, maxT } = c
+  let t = r / Math.tan(theta / 2)
+  if (t > maxT) {
+    t = maxT
+    r = t * Math.tan(theta / 2)
+  }
+  const T1 = { x: P.x + d1.x * t, y: P.y + d1.y * t }
+  const T2 = { x: P.x + d2.x * t, y: P.y + d2.y * t }
+  const k = (4 / 3) * Math.tan((Math.PI - theta) / 4) * r
+  const n1: PathNode = { x: T1.x, y: T1.y, ix: T1.x, iy: T1.y, ox: T1.x - d1.x * k, oy: T1.y - d1.y * k }
+  const n2: PathNode = { x: T2.x, y: T2.y, ix: T2.x - d2.x * k, iy: T2.y - d2.y * k, ox: T2.x, oy: T2.y }
+  return {
+    ...p,
+    subpaths: p.subpaths.map((sp, s) => {
+      if (s !== sub) return sp
+      const nodes = sp.nodes.slice()
+      nodes.splice(idx, 1, n1, n2)
+      return { ...sp, nodes }
+    }),
+  }
+}
+
 /** Anchor Point click: smooth ⇄ corner. */
 export function modelToggle(m: EditModel, sub: number, idx: number): {item: Item;corner: boolean;} {
   if (m.kind === "path") {
