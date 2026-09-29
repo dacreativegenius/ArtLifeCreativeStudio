@@ -9,6 +9,7 @@ import { SwatchesPanel } from "../components/art/SwatchesPanel";
 import { BrushPanel } from "../components/art/BrushPanel";
 import { LayersPanel } from "../components/art/LayersPanel";
 import { ObjectPanel } from "../components/art/ObjectPanel";
+import { HistoryPanel } from "../components/art/HistoryPanel";
 import { NewProjectDialog } from "../components/art/NewProjectDialog";
 import { onAndroidBack } from "../lib/art/native";
 import { useAutosave } from "../components/art/useAutosave";
@@ -112,7 +113,7 @@ export default function Index() {
               <PanelRightClose className="h-4 w-4" data-oid="89f927145a" />
             </button>
           </div>
-          <div id="panel-tab" role="tabpanel" aria-labelledby={`tab-${tab}`} className="flex flex-col" data-oid="b947f8d1ff" data-oid-text-editable="false" data-oid-text-source="expression:d72a2073dd5f|expression:e211dfe9a438|expression:5afa108e8fa6|expression:34d1a033247e">
+          <div id="panel-tab" role="tabpanel" aria-labelledby={`tab-${tab}`} className="flex flex-col" data-oid="b947f8d1ff" data-oid-text-editable="false" data-oid-text-source="expression:d72a2073dd5f|expression:e211dfe9a438|expression:cd50fe42fd53|expression:34d1a033247e">
             {tab === "color" &&
             <>
                 <ColorPanel studio={studio} />
@@ -120,7 +121,12 @@ export default function Index() {
               </>
             }
             {tab === "brushes" && <BrushPanel studio={studio} />}
-            {tab === "layers" && <LayersPanel studio={studio} />}
+            {tab === "layers" &&
+            <>
+                <LayersPanel studio={studio} />
+                <HistoryPanel studio={studio} />
+              </>
+            }
             {tab === "object" && <ObjectPanel studio={studio} />}
           </div>
         </aside>

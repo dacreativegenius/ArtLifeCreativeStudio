@@ -65,7 +65,7 @@ type Drag =
 {type: "shape";x0: number;y0: number;} |
 {type: "marquee";x0: number;y0: number;x1: number;y1: number;additive: boolean;base: string[];} |
 {type: "lasso";pts: XY[];additive: boolean;base: string[];} |
-{type: "move";lx: number;ly: number;ids: Set<string>;moved: boolean;} |
+{type: "move";lx: number;ly: number;ids: Set<string>;moved: boolean;x0?: number;y0?: number;tx?: number;ty?: number;box?: Rect | null;xs?: number[];ys?: number[];} |
 {type: "scale";ax: number;ay: number;hx: number;hy: number;orig: Map<string, Item>;moved: boolean;} |
 {type: "anchor";id: string;idx: number;orig: Item;moved: boolean;} |
 {type: "handle";id: string;sub: number;idx: number;which: "in" | "out";orig: PathItem;moved: boolean;free?: boolean;} |
@@ -163,6 +163,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const hoverAnchor = useRef<{id: string;idx: number;} | null>(null);
   const sampleReq = useRef<{sx: number;sy: number;} | null>(null);
   const hoverEdit = useRef<{id: string;add: XY | null;node: {sub: number;idx: number;} | null;} | null>(null);
+  const guides = useRef<{v: number[];h: number[];} | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const [panning, setPanning] = useState(false);
   const [readout, setReadout] = useState({ x: 0, y: 0, p: 0 });
@@ -222,6 +223,14 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const sy = clientY - r.top;
     const d = toDoc(sx, sy);
     return { sx, sy, x: d.x, y: d.y };
+  };
+
+  /** Snap a document point to the grid when Snap to Grid is on. */
+  const snapPt = (x: number, y: number) => {
+    const st = S.current;
+    if (!st.snapToGrid) return { x, y };
+    const g = st.gridSize;
+    return { x: Math.round(x / g) * g, y: Math.round(y / g) * g };
   };
 
   /* ---------- pen tool ---------- */
@@ -427,6 +436,33 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const acc = colors.current.accent;
     const X = (x: number) => x * zoom;
     const Y = (y: number) => y * zoom;
+    if (st.showGrid) {
+      const g = st.gridSize;
+      if (g * zoom >= 4) {
+        ctx.save();
+        ctx.lineWidth = 1;
+        const n = Math.floor(DOC_W / g);
+        const m = Math.floor(DOC_H / g);
+        for (const major of [false, true]) {
+          ctx.strokeStyle = major ? "rgba(61,139,255,0.38)" : "rgba(61,139,255,0.15)";
+          ctx.beginPath();
+          for (let i = 1; i <= n; i++) {
+            if (i % 4 === 0 !== major) continue;
+            const xx = X(i * g);
+            ctx.moveTo(xx, 0);
+            ctx.lineTo(xx, Y(DOC_H));
+          }
+          for (let j = 1; j <= m; j++) {
+            if (j % 4 === 0 !== major) continue;
+            const yy = Y(j * g);
+            ctx.moveTo(0, yy);
+            ctx.lineTo(X(DOC_W), yy);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
     const selIds = new Set(st.selection);
     ctx.lineWidth = 1;
     if (selIds.size) {
@@ -703,6 +739,23 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       ctx.setLineDash([4, 3]);
       ctx.strokeRect(X(x), Y(y), Math.abs(d.x1 - d.x0) * zoom, Math.abs(d.y1 - d.y0) * zoom);
       ctx.setLineDash([]);
+    }
+    const gd = guides.current;
+    if (gd && d?.type === "move") {
+      ctx.save();
+      ctx.strokeStyle = "#d65cd8";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const gx of gd.v) {
+        ctx.moveTo(X(gx), Y(-40 / zoom));
+        ctx.lineTo(X(gx), Y(DOC_H + 40 / zoom));
+      }
+      for (const gy of gd.h) {
+        ctx.moveTo(X(-40 / zoom), Y(gy));
+        ctx.lineTo(X(DOC_W + 40 / zoom), Y(gy));
+      }
+      ctx.stroke();
+      ctx.restore();
     }
     if (d?.type === "lasso" && d.pts.length > 1) {
       ctx.beginPath();
@@ -1145,7 +1198,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             opacity: 1,
             fill: st.shapeFill && tool !== "line" ? st.secondary : null
           };
-          drag.current = { type: "shape", x0: x, y0: y };
+          drag.current = { type: "shape", x0: snapPt(x, y).x, y0: snapPt(x, y).y };
           break;
         }
       case "pen":{
@@ -1159,7 +1212,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
               item: {
                 id: uid("p"),
                 kind: "path",
-                subpaths: [{ closed: false, nodes: [cornerNode(x, y)] }],
+                subpaths: [{ closed: false, nodes: [cornerNode(snapPt(x, y).x, snapPt(x, y).y)] }],
                 stroke: st.strokeEnabled && st.shapeStroke > 0 ? st.primary : null,
                 size: st.shapeStroke,
                 fill: st.shapeFill ? st.secondary : null,
@@ -1177,7 +1230,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             } else if (nodes.length >= 2 && near(last.x, last.y, sx, sy, 9)) {
               commitPen();
               break;
-            } else nodes.push(cornerNode(x, y));
+            } else nodes.push(cornerNode(snapPt(x, y).x, snapPt(x, y).y));
           }
           drag.current = { type: "pen" };
           break;
@@ -1340,7 +1393,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           }
         case "shape":{
             const it = live.current;
-            if (it && it.kind === "shape") it.points = shapePoints(it.shape, d.x0, d.y0, x, y, e.shiftKey);
+            const q = snapPt(x, y);
+            if (it && it.kind === "shape") it.points = shapePoints(it.shape, d.x0, d.y0, q.x, q.y, e.shiftKey);
             break;
           }
         case "pen":{
@@ -1397,15 +1451,81 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             break;
           }
         case "move":{
-            const dx = x - d.lx;
-            const dy = y - d.ly;
+            if (d.x0 === undefined) {
+              d.x0 = d.lx;
+              d.y0 = d.ly;
+              d.tx = 0;
+              d.ty = 0;
+              const inSel: Item[] = [];
+              const xs: number[] = [0, DOC_W / 2, DOC_W];
+              const ys: number[] = [0, DOC_H / 2, DOC_H];
+              for (const l of st.layers) {
+                if (!l.visible) continue;
+                for (const it of l.items) {
+                  if (it.kind === "erase" || it.hidden) continue;
+                  if (d.ids.has(it.id)) inSel.push(it);else
+                  if (st.smartGuides) {
+                    const ib = itemBounds(it);
+                    xs.push(ib.x, ib.x + ib.w / 2, ib.x + ib.w);
+                    ys.push(ib.y, ib.y + ib.h / 2, ib.y + ib.h);
+                  }
+                }
+              }
+              d.box = unionBounds(inSel);
+              d.xs = xs;
+              d.ys = ys;
+            }
+            if (!d.moved && Math.hypot(x - d.x0, y - d.y0!) * st.view.zoom < 3) break;
+            let tdx = x - d.x0;
+            let tdy = y - d.y0!;
+            let gv: number[] = [];
+            let gh: number[] = [];
+            const bx0 = d.box;
+            // Alt drags freely; otherwise snap to the grid and to other objects' edges / centres
+            if (bx0 && !e.altKey) {
+              if (st.snapToGrid) {
+                const g = st.gridSize;
+                tdx = Math.round((bx0.x + tdx) / g) * g - bx0.x;
+                tdy = Math.round((bx0.y + tdy) / g) * g - bx0.y;
+              }
+              if (st.smartGuides) {
+                const thr = 6 / st.view.zoom;
+                const best = (cands: number[], targets: number[]) => {
+                  let bd = thr;
+                  let off = 0;
+                  let hit: number | null = null;
+                  for (const c of cands) for (const t of targets) {
+                    const dd = Math.abs(t - c);
+                    if (dd < bd) {
+                      bd = dd;
+                      off = t - c;
+                      hit = t;
+                    }
+                  }
+                  return { off, hit };
+                };
+                const sx2 = best([bx0.x + tdx, bx0.x + bx0.w / 2 + tdx, bx0.x + bx0.w + tdx], d.xs!);
+                const sy2 = best([bx0.y + tdy, bx0.y + bx0.h / 2 + tdy, bx0.y + bx0.h + tdy], d.ys!);
+                if (sx2.hit !== null) {
+                  tdx += sx2.off;
+                  gv = [sx2.hit];
+                }
+                if (sy2.hit !== null) {
+                  tdy += sy2.off;
+                  gh = [sy2.hit];
+                }
+              }
+            }
+            guides.current = gv.length || gh.length ? { v: gv, h: gh } : null;
+            const dx = tdx - d.tx!;
+            const dy = tdy - d.ty!;
             if (!dx && !dy) break;
             if (!d.moved) {
               st.snapshot();
               d.moved = true;
             }
-            d.lx = x;
-            d.ly = y;
+            d.tx = tdx;
+            d.ty = tdy;
             st.setLayers((ls) =>
             ls.map((l) =>
             l.items.some((i) => d.ids.has(i.id)) ?
@@ -1449,7 +1569,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
               st.snapshot();
               d.moved = true;
             }
-            const next = setAnchor(d.orig, d.idx, x, y);
+            const q = snapPt(x, y);
+            const next = setAnchor(d.orig, d.idx, q.x, q.y);
             st.setLayers((ls) => replaceItems(ls, new Map([[d.id, next]])));
             break;
           }
@@ -1516,6 +1637,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     }
     const d = drag.current;
     drag.current = null;
+    guides.current = null;
     setPanning(false);
     const st = S.current;
     dirty.current = true;

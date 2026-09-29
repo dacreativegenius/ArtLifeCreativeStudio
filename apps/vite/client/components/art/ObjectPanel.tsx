@@ -72,13 +72,35 @@ export function ObjectPanel({ studio }: {studio: Studio;}) {
         </p>
       }
 
+      <Panel title="Grid & guides">
+        <div className="flex items-center gap-ds-sm" data-oid="751aae971f">
+          <span className="flex-1 text-label text-muted-foreground" data-oid="21c037b627">Grid size</span>
+          <NumInput label="Grid size" value={studio.gridSize} min={2} max={1000} suffix="px" onChange={studio.setGridSize} className="w-16 border-border bg-background" />
+        </div>
+        <div className="mt-ds-sm flex flex-col gap-ds-xs" data-oid="1a14b41c48">
+          <label className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="da9cbb10e7">
+            <input type="checkbox" checked={studio.showGrid} onChange={(e) => studio.setShowGrid(e.target.checked)} className="accent-primary" data-oid="363fe7f6de" />
+            Show grid <kbd className="ml-auto type-caption opacity-70" data-oid="acd6987f6e">Ctrl '</kbd>
+          </label>
+          <label className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="c73ac96153">
+            <input type="checkbox" checked={studio.snapToGrid} onChange={(e) => studio.setSnapToGrid(e.target.checked)} className="accent-primary" data-oid="bd4e2cea5c" />
+            Snap to grid <kbd className="ml-auto type-caption opacity-70" data-oid="f5be04c4d5">Ctrl ⇧ '</kbd>
+          </label>
+          <label className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="6e10f522c5">
+            <input type="checkbox" checked={studio.smartGuides} onChange={(e) => studio.setSmartGuides(e.target.checked)} className="accent-primary" data-oid="698730a2e5" />
+            Smart guides <kbd className="ml-auto type-caption opacity-70" data-oid="d601d86f83">Ctrl U</kbd>
+          </label>
+        </div>
+        <p className="mt-ds-xs type-caption text-muted-foreground" data-oid="6c1c5e0705">SNAPS MOVES, SHAPES, PEN + ANCHORS · HOLD ALT TO DRAG FREELY</p>
+      </Panel>
+
       <Panel title="Transform">
-        <div className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-x-ds-sm gap-y-ds-xs" data-oid="751aae971f">
-          <label className="type-caption text-muted-foreground" data-oid="21c037b627">X</label>
+        <div className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-x-ds-sm gap-y-ds-xs" data-oid="5e68abcee9">
+          <label className="type-caption text-muted-foreground" data-oid="d446e0dae3">X</label>
           <NumInput label="X position" value={Math.round(b?.x ?? 0)} min={-99999} max={99999} onChange={(v) => studio.setSelectionBounds({ x: v }, lock)} className="w-full border-border bg-background" />
           <label className="type-caption text-muted-foreground" data-oid="866c9ab8ee">Y</label>
           <NumInput label="Y position" value={Math.round(b?.y ?? 0)} min={-99999} max={99999} onChange={(v) => studio.setSelectionBounds({ y: v }, lock)} className="w-full border-border bg-background" />
-          <label className="type-caption text-muted-foreground" data-oid="da9cbb10e7">W</label>
+          <label className="type-caption text-muted-foreground" data-oid="86d98fad5d">W</label>
           <NumInput label="Width" value={Math.round(b?.w ?? 0)} min={1} max={99999} onChange={(v) => studio.setSelectionBounds({ w: v }, lock)} className="w-full border-border bg-background" />
           <label className="type-caption text-muted-foreground" data-oid="6b8bbb048e">H</label>
           <NumInput label="Height" value={Math.round(b?.h ?? 0)} min={1} max={99999} onChange={(v) => studio.setSelectionBounds({ h: v }, lock)} className="w-full border-border bg-background" />
@@ -96,7 +118,7 @@ export function ObjectPanel({ studio }: {studio: Studio;}) {
           <button type="button" disabled={!has} aria-label="Flip horizontal" title="Flip horizontal" onClick={() => studio.flipSelection("h")} className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35" data-oid="e5d56661f5">
             <FlipHorizontal2 className="h-4 w-4" data-oid="a5bb2d29c1" />
           </button>
-          <button type="button" disabled={!has} aria-label="Flip vertical" title="Flip vertical" onClick={() => studio.flipSelection("v")} className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35" data-oid="d446e0dae3">
+          <button type="button" disabled={!has} aria-label="Flip vertical" title="Flip vertical" onClick={() => studio.flipSelection("v")} className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35" data-oid="2f71a76201">
             <FlipVertical2 className="h-4 w-4" data-oid="105ced0abc" />
           </button>
           <div className="ml-auto flex items-center gap-ds-xs" data-oid="9f0d330d95">

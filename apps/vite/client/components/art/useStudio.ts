@@ -3,6 +3,28 @@ import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSetting
 import { isVectorBrush, renderDoc, rotateItem, scaleItem, translateItem, unionBounds } from "../../lib/art/render"
 import { isPathfinderable, outlineItem, pathfinder, type PathfinderOp } from "../../lib/art/pathfinder"
 import type { Rect } from "../../lib/art/types"
+import { describeChange } from "../../lib/art/history"
+
+export interface BrushPreset {
+  id: string
+  name: string
+  brush: BrushId
+  size: number
+  opacity: number
+  stabilizer: number
+}
+
+const PRESET_KEY = "artlife-brush-presets"
+const VIEW_KEY = "artlife-view-prefs"
+
+function loadJSON<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
 
 export type AlignMode = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom"
 export type ArrangeMode = "front" | "forward" | "backward" | "back"
@@ -68,7 +90,32 @@ export function useStudio() {
   const [docName, setDocName] = useState("Untitled")
   const [newDialogOpen, setNewDialogOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [, setHist] = useState(0)
+  const [histVersion, setHist] = useState(0)
+
+  // grid, snapping + smart guides (remembered between sessions)
+  const viewPrefs = useRef(loadJSON(VIEW_KEY, { showGrid: false, gridSize: 25, snapToGrid: false, smartGuides: true }))
+  const [showGrid, setShowGrid] = useState<boolean>(viewPrefs.current.showGrid)
+  const [gridSize, setGridSizeState] = useState<number>(viewPrefs.current.gridSize)
+  const [snapToGrid, setSnapToGrid] = useState<boolean>(viewPrefs.current.snapToGrid)
+  const [smartGuides, setSmartGuides] = useState<boolean>(viewPrefs.current.smartGuides)
+  const setGridSize = (v: number) => setGridSizeState(clamp(Math.round(v), 2, 1000))
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify({ showGrid, gridSize, snapToGrid, smartGuides }))
+    } catch {
+      /* storage unavailable */
+    }
+  }, [showGrid, gridSize, snapToGrid, smartGuides])
+
+  // saved brush presets
+  const [presets, setPresets] = useState<BrushPreset[]>(() => loadJSON<BrushPreset[]>(PRESET_KEY, []))
+  useEffect(() => {
+    try {
+      localStorage.setItem(PRESET_KEY, JSON.stringify(presets))
+    } catch {
+      /* storage unavailable */
+    }
+  }, [presets])
 
   const viewportRef = useRef({ w: 1200, h: 800 })
   const past = useRef<Layer[][]>([])
@@ -107,6 +154,24 @@ export function useStudio() {
     setSelection([])
     setHist((h) => h + 1)
   }, [])
+
+  /** History panel: every remembered state, labelled by what changed. */
+  const historyEntries = () => {
+    const states = [...past.current, layersRef.current, ...[...future.current].reverse()]
+    const current = past.current.length
+    const labels = states.map((s, i) => (i === 0 ? "Start" : describeChange(states[i - 1], s)))
+    return { labels, current }
+  }
+
+  const jumpToHistory = (k: number) => {
+    const states = [...past.current, layersRef.current, ...[...future.current].reverse()]
+    if (k < 0 || k >= states.length || k === past.current.length) return
+    past.current = states.slice(0, k)
+    future.current = states.slice(k + 1).reverse()
+    setLayers(states[k])
+    setSelection([])
+    setHist((h) => h + 1)
+  }
 
   const redo = useCallback(() => {
     const next = future.current.pop()
@@ -599,6 +664,20 @@ export function useStudio() {
   const addSwatch = (hex: string) => setSwatches((s) => (s.includes(hex) ? s : [...s, hex]))
   const removeSwatch = (hex: string) => setSwatches((s) => s.filter((x) => x !== hex))
 
+  const savePreset = (name: string) => {
+    const b = brushSettings[brushId]
+    const p: BrushPreset = { id: uid("bp"), name: name.trim() || BRUSHES.find((x) => x.id === brushId)?.name || "Brush", brush: brushId, size: b.size, opacity: b.opacity, stabilizer }
+    setPresets((ps) => [...ps, p])
+    flash(`Saved preset “${p.name}”`)
+  }
+  const applyPreset = (p: BrushPreset) => {
+    setBrushId(p.brush)
+    setBrushSettings((s) => ({ ...s, [p.brush]: { size: p.size, opacity: p.opacity } }))
+    setStabilizer(p.stabilizer)
+    setTool("brush")
+  }
+  const deletePreset = (id: string) => setPresets((ps) => ps.filter((p) => p.id !== id))
+
   const currentBrush = brushSettings[brushId]
   const updateBrush = (patch: Partial<BrushSettings>) =>
     setBrushSettings((s) => ({ ...s, [brushId]: { ...s[brushId], ...patch } }))
@@ -781,6 +860,21 @@ export function useStudio() {
     undo,
     redo,
     canUndo: past.current.length > 0,
+    histVersion,
+    historyEntries,
+    jumpToHistory,
+    showGrid,
+    setShowGrid,
+    gridSize,
+    setGridSize,
+    snapToGrid,
+    setSnapToGrid,
+    smartGuides,
+    setSmartGuides,
+    presets,
+    savePreset,
+    applyPreset,
+    deletePreset,
     canRedo: future.current.length > 0,
     addLayer,
     ensureLayer,
@@ -844,6 +938,20 @@ export function useStudio() {
       if (mod && k === "v") {
         e.preventDefault()
         s.paste()
+        return
+      }
+      if (mod && (k === "'" || k === '"')) {
+        e.preventDefault()
+        if (e.shiftKey) {
+          s.setSnapToGrid(!s.snapToGrid)
+          s.flash(s.snapToGrid ? "Snap to grid off" : "Snap to grid on")
+        } else s.setShowGrid(!s.showGrid)
+        return
+      }
+      if (mod && k === "u") {
+        e.preventDefault()
+        s.setSmartGuides(!s.smartGuides)
+        s.flash(s.smartGuides ? "Smart guides off" : "Smart guides on")
         return
       }
       if (mod && k === "g") {
