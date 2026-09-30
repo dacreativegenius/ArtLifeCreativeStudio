@@ -47,6 +47,8 @@ export interface EraseItem {
   kind: "erase"
   size: number
   points: Pt[]
+  /** Lasso cut-out: the points form a closed polygon that is removed (pencil part-selection). */
+  poly?: boolean
   hidden?: boolean
   /** Group id — grouped objects select, move and transform together. */
   group?: string

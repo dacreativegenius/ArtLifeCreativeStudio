@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { BRUSHES, DOC_H, DOC_W, setDocSize, uid, type BrushId, type BrushSettings, type Item, type Layer, type LayerType, type ToolId } from "../../lib/art/types"
+import { BRUSHES, DOC_H, DOC_W, layerTypeFor, setDocSize, uid, type BrushId, type BrushSettings, type Item, type Layer, type LayerType, type ToolId } from "../../lib/art/types"
 import { isVectorBrush, renderDoc, rotateItem, scaleItem, translateItem, unionBounds } from "../../lib/art/render"
 import { isPathfinderable, outlineItem, pathfinder, type PathfinderOp } from "../../lib/art/pathfinder"
 import type { Rect } from "../../lib/art/types"
-import { describeChange } from "../../lib/art/history"
+
+/** A unique default project name, so an unnamed save never overwrites an earlier drawing. */
+export function freshName() {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `Untitled ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+}
 
 export interface BrushPreset {
   id: string
@@ -87,8 +93,9 @@ export function useStudio() {
   const [fitNonce, setFitNonce] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
   const [docSize, setDocSizeState] = useState({ w: DOC_W, h: DOC_H })
-  const [docName, setDocName] = useState("Untitled")
-  const [newDialogOpen, setNewDialogOpen] = useState(false)
+  const [docName, setDocName] = useState(freshName)
+  // the New project window opens on launch (“Keep current drawing” continues the restored session)
+  const [newDialogOpen, setNewDialogOpen] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [histVersion, setHist] = useState(0)
 
@@ -133,7 +140,7 @@ export function useStudio() {
 
   const snapshot = useCallback(() => {
     past.current.push(layersRef.current)
-    if (past.current.length > 150) past.current.shift()
+    if (past.current.length > 40) past.current.shift()
     future.current = []
     setHist((h) => h + 1)
   }, [])
@@ -154,24 +161,6 @@ export function useStudio() {
     setSelection([])
     setHist((h) => h + 1)
   }, [])
-
-  /** History panel: every remembered state, labelled by what changed. */
-  const historyEntries = () => {
-    const states = [...past.current, layersRef.current, ...[...future.current].reverse()]
-    const current = past.current.length
-    const labels = states.map((s, i) => (i === 0 ? "Start" : describeChange(states[i - 1], s)))
-    return { labels, current }
-  }
-
-  const jumpToHistory = (k: number) => {
-    const states = [...past.current, layersRef.current, ...[...future.current].reverse()]
-    if (k < 0 || k >= states.length || k === past.current.length) return
-    past.current = states.slice(0, k)
-    future.current = states.slice(k + 1).reverse()
-    setLayers(states[k])
-    setSelection([])
-    setHist((h) => h + 1)
-  }
 
   const redo = useCallback(() => {
     const next = future.current.pop()
@@ -257,6 +246,56 @@ export function useStudio() {
       ;[next[idx], next[to]] = [next[to], next[idx]]
       return next
     })
+  }
+
+  /** Drag-reorder: drop layer `id` above or below layer `targetId` (above = higher in the stack). */
+  const moveLayerTo = (id: string, targetId: string, place: "above" | "below") => {
+    if (id === targetId) return
+    const prev = layersRef.current
+    const src = prev.find((l) => l.id === id)
+    if (!src) return
+    const next = prev.filter((l) => l.id !== id)
+    const ti = next.findIndex((l) => l.id === targetId)
+    if (ti < 0) return
+    next.splice(place === "above" ? ti + 1 : ti, 0, src)
+    if (next.every((l, i) => l === prev[i])) return
+    commit(() => next)
+    setActiveLayerId(id)
+  }
+
+  /**
+   * Drag-reorder a path / shape: drop it above or below another object, in the same layer or
+   * a different one (targetItemId null = top of that layer). Grouped objects travel together.
+   */
+  const moveItemTo = (itemId: string, targetLayerId: string, targetItemId: string | null, place: "above" | "below") => {
+    if (itemId === targetItemId) return
+    const ls = layersRef.current
+    const from = ls.find((l) => l.items.some((i) => i.id === itemId))
+    const to = ls.find((l) => l.id === targetLayerId)
+    if (!from || !to) return
+    if (to.locked || from.locked) return flash(`“${to.locked ? to.name : from.name}” is locked`)
+    const it = from.items.find((i) => i.id === itemId)!
+    const need = it.kind === "image" ? null : layerTypeFor(it)
+    if (need && need !== to.type) return flash(`${need === "pencil" ? "Pencil strokes" : "Vector objects"} can only go on a ${need} layer`)
+    const ids = new Set(it.group ? from.items.filter((i) => i.group === it.group).map((i) => i.id) : [itemId])
+    const moving = from.items.filter((i) => ids.has(i.id))
+    commit((prev) =>
+      prev
+        .map((l) => (l.id === from.id ? { ...l, items: l.items.filter((i) => !ids.has(i.id)) } : l))
+        .map((l) => {
+          if (l.id !== targetLayerId) return l
+          const items = l.items.slice()
+          let at = items.length
+          if (targetItemId) {
+            const ti = items.findIndex((i) => i.id === targetItemId)
+            if (ti >= 0) at = place === "above" ? ti + 1 : ti
+          }
+          items.splice(at, 0, ...moving)
+          return { ...l, items }
+        }),
+    )
+    setActiveLayerId(targetLayerId)
+    if (from.id !== targetLayerId) flash(`Moved to “${to.name}”`)
   }
 
   const updateLayer = (id: string, patch: Partial<Layer>, history = true) => {
@@ -548,7 +587,7 @@ export function useStudio() {
     setHist((h) => h + 1)
   }
 
-  const newDocument = (w: number, h: number, name = "Untitled") => {
+  const newDocument = (w: number, h: number, name = freshName()) => {
     applyDocSize(w, h)
     const ink = makeLayer("Ink", "vector")
     setLayers([makeLayer("Sketch", "pencil"), ink])
@@ -586,13 +625,19 @@ export function useStudio() {
   }
 
   const saveDTM = async () => {
-    const filename = `${safeName(docName)}.dtm`
+    // older sessions were all called “Untitled” — give them a unique name before saving
+    let name = docName
+    if (/^untitled$/i.test(name.trim())) {
+      name = freshName()
+      setDocName(name)
+    }
+    const filename = `${safeName(name)}.dtm`
     const res = await saveFile(
       () =>
         new Blob(
           [
             serializeDTM({
-              name: docName,
+              name,
               width: DOC_W,
               height: DOC_H,
               layers: layersRef.current,
@@ -861,8 +906,7 @@ export function useStudio() {
     redo,
     canUndo: past.current.length > 0,
     histVersion,
-    historyEntries,
-    jumpToHistory,
+    freshName,
     showGrid,
     setShowGrid,
     gridSize,
@@ -881,6 +925,8 @@ export function useStudio() {
     deleteLayer,
     duplicateLayer,
     moveLayer,
+    moveLayerTo,
+    moveItemTo,
     updateLayer,
     clearLayer,
     newDocument,

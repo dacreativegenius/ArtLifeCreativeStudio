@@ -1,5 +1,5 @@
 import type { BlendMode, Item, Layer, LayerType, PathItem, ShapeItem, StrokeItem } from "./types"
-import { catmull, drawItem, ellipseSamples, itemBounds, pressureGeometry } from "./render"
+import { catmullBeziers, drawItem, ellipseSegments, itemBounds, pressureGeometry } from "./render"
 import { desktop } from "./desktop"
 import { isNativeApp, saveNative } from "./native"
 
@@ -116,9 +116,11 @@ function rasterItem(it: Item) {
 
 function strokeSVG(s: StrokeItem) {
   if (s.brush === "vector-fixed") {
-    const pts = catmull(s.points)
+    // one bezier per anchor — opens in Illustrator with the same slim anchor count as on canvas
+    const pts = s.points.slice()
     if (pts.length === 1) pts.push({ ...pts[0], x: pts[0].x + 0.01 })
-    return `<path d="${polyD(pts, false)}" fill="none" stroke="${s.color}" stroke-width="${f(s.size)}" stroke-linecap="round" stroke-linejoin="round" opacity="${s.opacity}"/>`
+    const d = `M${f(pts[0].x)} ${f(pts[0].y)}` + catmullBeziers(pts).map((b) => `C${f(b.c1.x)} ${f(b.c1.y)} ${f(b.c2.x)} ${f(b.c2.y)} ${f(b.to.x)} ${f(b.to.y)}`).join("")
+    return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${f(s.size)}" stroke-linecap="round" stroke-linejoin="round" opacity="${s.opacity}"/>`
   }
   if (s.brush === "vector-pressure") {
     const g = pressureGeometry(s)
@@ -147,7 +149,8 @@ function shapeSVG(s: ShapeItem) {
   if (s.shape === "rect") {
     return `<path d="${polyD(p, true)}" ${fill} ${stroke} stroke-linejoin="miter" opacity="${s.opacity}"/>`
   }
-  return `<path d="${polyD(ellipseSamples(p, 24), true)}" ${fill} ${stroke} stroke-linejoin="round" opacity="${s.opacity}"/>`
+  const d = `M${f(p[0].x)} ${f(p[0].y)}` + ellipseSegments(p).map((sg) => `C${f(sg.c1.x)} ${f(sg.c1.y)} ${f(sg.c2.x)} ${f(sg.c2.y)} ${f(sg.Q.x)} ${f(sg.Q.y)}`).join("") + "Z"
+  return `<path d="${d}" ${fill} ${stroke} stroke-linejoin="round" opacity="${s.opacity}"/>`
 }
 
 function pathSVG(p: PathItem) {
@@ -183,9 +186,12 @@ export function buildSVG(layers: Layer[], W: number, H: number) {
         if (!content) continue
         const id = `erase-${maskN++}`
         const pts = it.points.length === 1 ? [it.points[0], { ...it.points[0], x: it.points[0].x + 0.01 }] : it.points
+        const cut = it.poly
+          ? `<path d="${polyD(pts, true)}" fill="#000"/>`
+          : `<path d="${polyD(pts, false)}" fill="none" stroke="#000" stroke-width="${f(it.size)}" stroke-linecap="round" stroke-linejoin="round"/>`
         defs.push(
           `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#fff"/>` +
-            `<path d="${polyD(pts, false)}" fill="none" stroke="#000" stroke-width="${f(it.size)}" stroke-linecap="round" stroke-linejoin="round"/></mask>`,
+            `${cut}</mask>`,
         )
         content = `<g mask="url(#${id})">${content}</g>`
         continue

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Scissors, Trash2 } from "lucide-react";
+import { Group, Scissors, Trash2, Ungroup } from "lucide-react";
+import { outlineItem } from "../../lib/art/pathfinder";
 import type { Studio, View } from "./useStudio";
 import {
   DOC_H,
@@ -34,6 +35,7 @@ import {
   scaleItem,
   setAnchor,
   simplify,
+  splitPath,
   traceMask,
   translateItem,
   unionBounds,
@@ -87,6 +89,20 @@ const isPencilMark = (it: Item) => it.kind === "stroke" && !isVectorBrush(it.bru
 function replaceItems(ls: Layer[], map: Map<string, Item>): Layer[] {
   return ls.map((l) => l.items.some((i) => map.has(i.id)) ? { ...l, items: l.items.map((i) => map.get(i.id) ?? i) } : l);
 }
+
+/** Items are immutable, so their bounds can be memoised for viewport culling. */
+const boundsCache = new WeakMap<Item, Rect>();
+const boundsOf = (it: Item) => {
+  let b = boundsCache.get(it);
+  if (!b) {
+    b = itemBounds(it);
+    boundsCache.set(it, b);
+  }
+  return b;
+};
+
+/** Per-layer bitmap of committed artwork — only redrawn when the layer's items or the view change. */
+type LayerCache = {canvas: HTMLCanvasElement;items: Item[] | null;key: string;};
 
 function hitTop(layers: Layer[], x: number, y: number, tol: number) {
   for (let li = layers.length - 1; li >= 0; li--) {
@@ -146,7 +162,11 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const S = useRef(studio);
   S.current = studio;
-  const layerCanvases = useRef(new Map<string, HTMLCanvasElement>());
+  const layerCanvases = useRef(new Map<string, LayerCache>());
+  const scratch = useRef<HTMLCanvasElement | null>(null);
+  const paperCache = useRef<{canvas: HTMLCanvasElement;key: string;} | null>(null);
+  const predicted = useRef<Pt[]>([]);
+  const readoutT = useRef(0);
   const live = useRef<Item | null>(null);
   const liveLayer = useRef<string>("");
   const pen = useRef<Pen | null>(null);
@@ -364,33 +384,41 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
 
-    // paper
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(rot);
-    ctx.shadowColor = "rgba(0,0,0,0.5)";
-    ctx.shadowBlur = 32;
-    ctx.shadowOffsetY = 10;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, DOC_W * zoom, DOC_H * zoom);
-    ctx.restore();
+    const viewKey = `${px}|${py}|${zoom}|${rot}|${c.width}|${c.height}|${dpr}|${DOC_W}|${DOC_H}`;
 
-    // layers
-    for (const layer of st.layers) {
-      if (!layer.visible) continue;
-      let lc = layerCanvases.current.get(layer.id);
-      if (!lc) {
-        lc = document.createElement("canvas");
-        layerCanvases.current.set(layer.id, lc);
-      }
-      if (lc.width !== c.width || lc.height !== c.height) {
-        lc.width = c.width;
-        lc.height = c.height;
-      }
-      const l = lc.getContext("2d")!;
+    // paper — its soft drop shadow is expensive on tablets, so it is cached per view
+    let paper = paperCache.current;
+    if (!paper) paper = paperCache.current = { canvas: document.createElement("canvas"), key: "" };
+    if (paper.key !== viewKey) {
+      const pc = paper.canvas;
+      pc.width = c.width;
+      pc.height = c.height;
+      const p2 = pc.getContext("2d")!;
+      p2.setTransform(dpr, 0, 0, dpr, 0, 0);
+      p2.translate(px, py);
+      p2.rotate(rot);
+      p2.shadowColor = "rgba(0,0,0,0.5)";
+      p2.shadowBlur = 32;
+      p2.shadowOffsetY = 10;
+      p2.fillStyle = "#ffffff";
+      p2.fillRect(0, 0, DOC_W * zoom, DOC_H * zoom);
+      paper.key = viewKey;
+    }
+    ctx.drawImage(paper.canvas, 0, 0);
+
+    // visible part of the document (viewport culling: off-screen objects are skipped)
+    const vw = size.current.w;
+    const vh = size.current.h;
+    const vc = [toDoc(0, 0), toDoc(vw, 0), toDoc(0, vh), toDoc(vw, vh)];
+    const vx0 = Math.min(...vc.map((q) => q.x));
+    const vy0 = Math.min(...vc.map((q) => q.y));
+    const vx1 = Math.max(...vc.map((q) => q.x));
+    const vy1 = Math.max(...vc.map((q) => q.y));
+    const vis = { x: vx0 - 4, y: vy0 - 4, w: vx1 - vx0 + 8, h: vy1 - vy0 + 8 };
+
+    const prep = (l: CanvasRenderingContext2D, clear: boolean) => {
       l.setTransform(1, 0, 0, 1, 0, 0);
-      l.clearRect(0, 0, lc.width, lc.height);
+      if (clear) l.clearRect(0, 0, l.canvas.width, l.canvas.height);
       l.setTransform(dpr, 0, 0, dpr, 0, 0);
       l.translate(px, py);
       l.rotate(rot);
@@ -399,16 +427,64 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       l.beginPath();
       l.rect(0, 0, DOC_W, DOC_H);
       l.clip();
-      for (const it of layer.items) drawItem(l, it);
-      if (live.current && layer.id === liveLayer.current) drawItem(l, live.current);
-      if (pen.current && layer.id === pen.current.layerId) drawItem(l, pen.current.item);
-      l.restore();
+    };
+
+    // layers — committed artwork comes from each layer's cache; only the live stroke is redrawn per frame
+    for (const layer of st.layers) {
+      if (!layer.visible) continue;
+      let cache = layerCanvases.current.get(layer.id);
+      if (!cache) {
+        cache = { canvas: document.createElement("canvas"), items: null, key: "" };
+        layerCanvases.current.set(layer.id, cache);
+      }
+      const lc = cache.canvas;
+      if (lc.width !== c.width || lc.height !== c.height) {
+        lc.width = c.width;
+        lc.height = c.height;
+        cache.key = "";
+      }
+      if (cache.items !== layer.items || cache.key !== viewKey) {
+        const l = lc.getContext("2d")!;
+        prep(l, true);
+        for (const it of layer.items) if (!it.hidden && rectsIntersect(boundsOf(it), vis)) drawItem(l, it);
+        l.restore();
+        cache.items = layer.items;
+        cache.key = viewKey;
+      }
+      let out = lc;
+      const liveHere = live.current && layer.id === liveLayer.current ? live.current : null;
+      const penHere = pen.current && layer.id === pen.current.layerId ? pen.current.item : null;
+      if (liveHere || penHere) {
+        let sc = scratch.current;
+        if (!sc) sc = scratch.current = document.createElement("canvas");
+        if (sc.width !== c.width || sc.height !== c.height) {
+          sc.width = c.width;
+          sc.height = c.height;
+        }
+        const s2 = sc.getContext("2d")!;
+        s2.setTransform(1, 0, 0, 1, 0, 0);
+        s2.clearRect(0, 0, sc.width, sc.height);
+        s2.drawImage(lc, 0, 0);
+        prep(s2, false);
+        if (liveHere) {
+          // stroke prediction: draw slightly ahead of the pen so the line keeps up with the nib
+          const pr = predicted.current;
+          const withPred = pr.length && (liveHere.kind === "stroke" || liveHere.kind === "erase") ? { ...liveHere, points: [...liveHere.points, ...pr] } as Item : liveHere;
+          drawItem(s2, withPred);
+        }
+        if (penHere) drawItem(s2, penHere);
+        s2.restore();
+        out = sc;
+      }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = layer.opacity;
       ctx.globalCompositeOperation = blendOp(layer.blend);
-      ctx.drawImage(lc, 0, 0);
+      ctx.drawImage(out, 0, 0);
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
+    }
+    if (layerCanvases.current.size > st.layers.length + 4) {
+      for (const id of Array.from(layerCanvases.current.keys())) if (!st.layers.some((l) => l.id === id)) layerCanvases.current.delete(id);
     }
 
     // eyedropper: read the composited artwork before any overlay is drawn
@@ -1071,6 +1147,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     }
     drag.current = null;
     setPanning(false);
+    predicted.current = [];
     const m = gestureMetrics();
     gesture.current = { m0x: m.mx, m0y: m.my, d0: m.d, a0: m.ang, v0: { ...S.current.view } };
     dirty.current = true;
@@ -1389,6 +1466,17 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             addPoint(e.nativeEvent);
             const it = live.current;
             if (it && it.kind === "stroke") p = it.points[it.points.length - 1].p;
+            // browser-predicted pen positions (Chrome / Android WebView) — drawn but never committed
+            const pev = e.nativeEvent.getPredictedEvents?.() ?? [];
+            const lastPt = it && (it.kind === "stroke" || it.kind === "erase") ? it.points[it.points.length - 1] : null;
+            predicted.current = [];
+            if (lastPt) {
+              for (const ev of pev.slice(-2)) {
+                const q = locate(ev.clientX, ev.clientY);
+                const far = Math.hypot(q.x - lastPt.x, q.y - lastPt.y) * st.view.zoom;
+                if (far < 48) predicted.current.push({ x: q.x, y: q.y, p: lastPt.p });
+              }
+            }
             break;
           }
         case "shape":{
@@ -1621,7 +1709,53 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     } else if (EDIT_TOOLS.has(st.tool)) {
       updateHoverEdit(sx, sy, x, y);
     }
-    setReadout({ x: Math.round(x), y: Math.round(y), p });
+    // the status bar re-renders React — throttle it so it never competes with the stroke
+    const now = performance.now();
+    if (now - readoutT.current > 90) {
+      readoutT.current = now;
+      setReadout({ x: Math.round(x), y: Math.round(y), p });
+    }
+  };
+
+  /**
+   * Freeform Select on a pencil layer lifts just the enclosed part of the sketch into its own
+   * piece (the rest of the layer stays untouched) so it can be moved, scaled or rotated.
+   */
+  const cutPencilSelection = (poly: XY[]) => {
+    const st = S.current;
+    const layer = st.activeLayer;
+    if (!layer || layer.type !== "pencil" || layer.locked || !layer.visible) return false;
+    const marks = layer.items.filter((i) => !i.hidden && i.kind !== "erase");
+    if (!marks.some((it) => outlineOf(it).pts.some((q) => pointInPoly(q.x, q.y, poly)))) return false;
+    const px0 = Math.max(0, Math.floor(Math.min(...poly.map((q) => q.x))));
+    const py0 = Math.max(0, Math.floor(Math.min(...poly.map((q) => q.y))));
+    const px1 = Math.min(DOC_W, Math.ceil(Math.max(...poly.map((q) => q.x))));
+    const py1 = Math.min(DOC_H, Math.ceil(Math.max(...poly.map((q) => q.y))));
+    const bw = px1 - px0;
+    const bh = py1 - py0;
+    if (bw < 2 || bh < 2) return false;
+    const RES = 2; // lift at 2× so the piece stays crisp when zoomed in
+    const cv = document.createElement("canvas");
+    cv.width = bw * RES;
+    cv.height = bh * RES;
+    const g = cv.getContext("2d");
+    if (!g) return false;
+    g.setTransform(RES, 0, 0, RES, -px0 * RES, -py0 * RES);
+    for (const it of layer.items) drawItem(g, it);
+    g.globalCompositeOperation = "destination-in";
+    g.fillStyle = "#000000";
+    g.beginPath();
+    poly.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y));
+    g.closePath();
+    g.fill();
+    g.globalCompositeOperation = "source-over";
+    const cut: Item = { id: uid("e"), kind: "erase", size: 0, poly: true, points: poly.map((q) => ({ x: q.x, y: q.y, p: 1 })) };
+    const piece: Item = { id: uid("img"), kind: "image", x: px0, y: py0, w: bw, h: bh, canvas: cv };
+    st.commit((ls) => ls.map((l) => l.id === layer.id ? { ...l, items: [...l.items, cut, piece] } : l));
+    st.setSelection([piece.id]);
+    st.setTool("transform");
+    st.flash("Lifted part of the sketch · drag to move · corners scale · top handle rotates");
+    return true;
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1638,6 +1772,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const d = drag.current;
     drag.current = null;
     guides.current = null;
+    predicted.current = [];
     setPanning(false);
     const st = S.current;
     dirty.current = true;
@@ -1658,7 +1793,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       const it = live.current;
       live.current = null;
       if (!it) return;
-      if (it.kind === "stroke" && isVectorBrush(it.brush)) it.points = simplify(it.points, 0.9);
+      // fewer anchors: Mono Liner gets a looser fit, Pressure Ink is slimmed again when it becomes a blob
+      if (it.kind === "stroke" && isVectorBrush(it.brush)) it.points = simplify(it.points, it.brush === "vector-fixed" ? 1.4 : 0.9);
       if (it.kind === "shape") {
         const b = itemBounds(it);
         if (b.w - it.size < 2 && b.h - it.size < 2) return;
@@ -1672,28 +1808,54 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           return;
         }
       }
-      // Eraser on a vector layer cuts filled shapes for real (no hidden, blank anchors left behind)
+      // Eraser on a vector layer cuts vector objects for real and breaks them into separate pieces
       if (it.kind === "erase") {
         const layer = st.layers.find((l) => l.id === layerId);
         if (layer && layer.type === "vector") {
           const eb = itemBounds(it);
           let keepMark = false;
-          const removed: string[] = [];
+          let most = 0;
           const items: Item[] = [];
           for (const x of layer.items) {
-            if (x.kind === "path" && x.fill && !x.stroke && !x.hidden) {
-              const r = eraseFromPath(x, it);
-              if (r === undefined) items.push(x);else
-              if (r) items.push(r);else
-              removed.push(x.id);
-            } else {
+            if (x.hidden || x.kind === "erase" || !rectsIntersect(itemBounds(x), eb)) {
               items.push(x);
-              if (x.kind !== "erase" && !x.hidden && rectsIntersect(itemBounds(x), eb)) keepMark = true;
+              continue;
             }
+            if (x.kind === "image") {
+              items.push(x);
+              keepMark = true;
+              continue;
+            }
+            // filled shapes are cut directly; strokes, lines and outlined shapes are expanded first
+            const srcs = x.kind === "path" && x.fill && !x.stroke ? [x] : outlineItem(x);
+            if (!srcs || !srcs.length) {
+              items.push(x);
+              keepMark = true;
+              continue;
+            }
+            let touched = false;
+            const res: Item[] = [];
+            for (const s of srcs) {
+              const r = eraseFromPath(s, it);
+              if (r === undefined) res.push(s);else
+              {
+                touched = true;
+                if (r) res.push(...splitPath(r));
+              }
+            }
+            if (!touched) {
+              items.push(x);
+              continue;
+            }
+            if (x.group) for (const r of res) r.group = x.group;
+            most = Math.max(most, res.length);
+            items.push(...res);
           }
           if (keepMark) items.push(it);
           st.commit((ls) => ls.map((l) => l.id === layerId ? { ...l, items } : l));
-          if (removed.length) st.setSelection((s) => s.filter((id) => !removed.includes(id)));
+          const alive = new Set(items.map((i) => i.id));
+          st.setSelection((s) => s.filter((id) => alive.has(id)));
+          if (most > 1) st.flash(`Eraser split the shape into ${most} pieces`);
           return;
         }
       }
@@ -1716,6 +1878,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     }
     if (d.type === "lasso") {
       if (d.pts.length < 3) return;
+      if (!d.additive && cutPencilSelection(d.pts)) return;
       const ids = selectable((it) => outlineOf(it).pts.some((p) => pointInPoly(p.x, p.y, d.pts)));
       st.setSelection(expandGroups(d.additive ? [...d.base, ...ids] : ids));
     }
@@ -1761,7 +1924,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     <section className="relative flex min-w-0 flex-1 flex-col" data-oid="b1527df8cb" data-oid-component-root="true">
       <div
         ref={wrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:1ddaaafbc384">
+        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:2f16fc049502">
         
         <canvas
           ref={canvasRef}
@@ -1788,7 +1951,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           </p>
         }
         {studio.selection.length > 0 &&
-        <div className="absolute bottom-ds-md left-1/2 z-10 flex -translate-x-1/2 items-center gap-ds-xs rounded-lg border border-border bg-popover p-ds-xs shadow-xl" data-oid="2ce754afae">
+        <div className="absolute bottom-ds-md left-1/2 z-10 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-ds-xs overflow-x-auto rounded-lg border border-border bg-popover p-ds-xs shadow-xl" data-oid="2ce754afae">
             <p className="px-ds-sm type-caption text-muted-foreground" data-oid="e77d04719e">
               <output className="text-accent" data-oid="d7f47ddfcd">{selectionCount}</output> SELECTED
             </p>
@@ -1797,6 +1960,12 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             </button>
             <button type="button" onClick={studio.cutSelection} className="inline-flex h-9 items-center gap-ds-xs rounded-md px-ds-md text-label text-foreground hover:bg-secondary" data-oid="0c4848ffbf">
               <Scissors className="h-4 w-4" data-oid="e83bf1e8aa" /> Cut
+            </button>
+            <button type="button" disabled={studio.selection.length < 2} onClick={studio.groupSelection} className="inline-flex h-9 shrink-0 items-center gap-ds-xs rounded-md px-ds-md text-label text-foreground hover:bg-secondary disabled:opacity-35" data-oid="50075270ed">
+              <Group className="h-4 w-4" data-oid="eb820fbc0d" /> Group
+            </button>
+            <button type="button" disabled={!studio.selectionGrouped} onClick={studio.ungroupSelection} className="inline-flex h-9 shrink-0 items-center gap-ds-xs rounded-md px-ds-md text-label text-foreground hover:bg-secondary disabled:opacity-35" data-oid="628ed51504">
+              <Ungroup className="h-4 w-4" data-oid="6ea5ef98b0" /> Ungroup
             </button>
             <button type="button" onClick={studio.deleteSelection} className="inline-flex h-9 items-center gap-ds-xs rounded-md bg-destructive px-ds-md text-label font-semibold text-destructive-foreground hover:opacity-90" data-oid="28c3865609">
               <Trash2 className="h-4 w-4" data-oid="16d8e1c405" /> Delete

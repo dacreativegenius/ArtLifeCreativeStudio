@@ -1,5 +1,4 @@
 import {
-  ArrowLeftRight,
   Brush,
   ClipboardPaste,
   Scissors,
@@ -62,7 +61,7 @@ const GROUPS: ToolDef[][] = [
 
 export function Toolbar({ studio }: {studio: Studio;}) {
   return (
-    <nav aria-label="Tools" className="relative z-20 flex w-[92px] shrink-0 flex-col max-md:overflow-y-auto items-center gap-ds-sm border-r border-border bg-card px-ds-xs py-ds-sm" data-oid="6d62bae305" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="expression:887ce70c0f4a|element:div|element:div">
+    <nav aria-label="Tools" className="relative z-20 flex w-[92px] shrink-0 flex-col max-md:overflow-y-auto items-center gap-ds-sm border-r border-border bg-card px-ds-xs py-ds-sm" data-oid="6d62bae305" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="expression:887ce70c0f4a|element:div">
       {GROUPS.map((group, gi) =>
       <div key={gi} data-index={gi} className="grid w-full grid-cols-2 justify-items-center gap-ds-xs border-t border-border pt-ds-sm first:border-t-0 first:pt-0" data-oid="93f87d87c4" data-oid-shared="true">
           {group.map((t, index) => {
@@ -141,36 +140,6 @@ export function Toolbar({ studio }: {studio: Studio;}) {
         </div>
       </div>
 
-      <div className="mt-auto flex items-end gap-ds-xs pb-ds-xs" data-oid="92379abf13">
-        <div className="relative h-11 w-11" data-oid="29909a795a">
-          <button
-            type="button"
-            aria-label="Fill colour — click to edit fill"
-            title="Fill"
-            aria-pressed={studio.colorTarget === "fill"}
-            onClick={() => studio.setColorTarget("fill")}
-            className="absolute left-0 top-0 h-7 w-7 rounded-sm border border-border shadow aria-pressed:z-10 aria-pressed:ring-2 aria-pressed:ring-primary"
-            style={{ backgroundColor: studio.shapeFill ? studio.secondary : "transparent" }} data-oid="8218fd7f23" data-oid-style-dynamic="backgroundColor" />
-          
-          <button
-            type="button"
-            aria-label="Stroke colour — click to edit stroke"
-            title="Stroke"
-            aria-pressed={studio.colorTarget === "stroke"}
-            onClick={() => studio.setColorTarget("stroke")}
-            className="absolute bottom-0 right-0 h-7 w-7 rounded-sm border-[5px] bg-card shadow-md aria-pressed:z-10 aria-pressed:ring-2 aria-pressed:ring-primary"
-            style={{ borderColor: studio.strokeEnabled ? studio.primary : "var(--border)" }} data-oid="8ef14169f7" data-oid-style-dynamic="borderColor" />
-          
-        </div>
-        <button
-          type="button"
-          aria-label="Swap stroke and fill (Shift+X)"
-          title="Swap (Shift+X)"
-          onClick={studio.swapColors}
-          className="grid h-6 w-6 place-items-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground" data-oid="9c55aaef4f">
-          <ArrowLeftRight className="h-3.5 w-3.5" data-oid="c93f919b83" />
-        </button>
-      </div>
     </nav>);
 
 }

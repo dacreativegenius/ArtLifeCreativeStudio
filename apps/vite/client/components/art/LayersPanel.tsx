@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Brush, ChevronDown, ChevronRight, ChevronUp, Circle, Copy, Eraser, Eye, EyeOff, Image as ImageIcon, Lock, PaintBucket, PenTool, Pencil, Slash, Square, Trash2, Unlock } from "lucide-react";
+import { Brush, ChevronDown, ChevronRight, ChevronUp, Circle, Copy, Eraser, Eye, EyeOff, GripVertical, Image as ImageIcon, Lock, PaintBucket, PenTool, Pencil, Slash, Square, Trash2, Unlock } from "lucide-react";
 import type { Studio } from "./useStudio";
 import { Panel, iconBtn } from "./Panel";
 import { NumInput } from "./NumInput";
@@ -63,6 +63,53 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
     if (!["select", "direct", "move", "transform", "lasso", "penAdd", "penDelete", "penConvert"].includes(studio.tool)) studio.setTool("select");
   };
   const [editing, setEditing] = useState<string | null>(null);
+
+  /* ---------- drag handles: reorder layers, and paths / shapes within or between layers ---------- */
+  type Drop = {key: string;place: "above" | "below";};
+  const [drop, setDropState] = useState<Drop | null>(null);
+  const dropRef = useRef<Drop | null>(null);
+  const dragRef = useRef<{kind: "layer" | "item";id: string;} | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const setDrop = (d: Drop | null) => {
+    const p = dropRef.current;
+    if (p?.key === d?.key && p?.place === d?.place) return;
+    dropRef.current = d;
+    setDropState(d);
+  };
+  const startDrag = (e: React.PointerEvent<HTMLButtonElement>, kind: "layer" | "item", id: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { kind, id };
+    setDraggingId(id);
+  };
+  const moveDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-drop-key]");
+    const key = el?.dataset.dropKey;
+    if (!el || !key || d.kind === "layer" && !key.startsWith("L:")) return setDrop(null);
+    const r = el.getBoundingClientRect();
+    setDrop({ key, place: e.clientY < r.top + r.height / 2 ? "above" : "below" });
+  };
+  const endDrag = () => {
+    const d = dragRef.current;
+    const t = dropRef.current;
+    dragRef.current = null;
+    setDraggingId(null);
+    setDrop(null);
+    if (!d || !t) return;
+    if (t.key.startsWith("L:")) {
+      const layerId = t.key.slice(2);
+      if (d.kind === "layer") studio.moveLayerTo(d.id, layerId, t.place);else
+      studio.moveItemTo(d.id, layerId, null, "above");
+    } else {
+      const [, layerId, itemId] = t.key.split("|");
+      studio.moveItemTo(d.id, layerId, itemId, t.place);
+    }
+  };
+  const dropAt = (key: string) => drop?.key === key ? drop.place : undefined;
+
   const active = studio.activeLayer;
   const ordered = [...studio.layers].reverse();
   const activeIndex = studio.layers.findIndex((l) => l.id === active?.id);
@@ -151,9 +198,24 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
             role="option"
             aria-selected={layer.id === active?.id}
             data-hidden={!layer.visible}
+            data-drop-key={`L:${layer.id}`}
+            data-drop={dropAt(`L:${layer.id}`)}
+            data-dragging={draggingId === layer.id}
             onClick={() => studio.setActiveLayerId(layer.id)}
-            className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-text-editable="false">
+            className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50 data-[dragging=true]:opacity-40 data-[drop=above]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=below]:shadow-[inset_0_-2px_0_0_var(--primary)]" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-text-editable="false">
           
+            <button
+              type="button"
+              aria-label={`Drag to reorder ${layer.name}`}
+              title="Drag to reorder"
+              onPointerDown={(e) => startDrag(e, "layer", layer.id)}
+              onPointerMove={moveDrag}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+              onClick={(e) => e.stopPropagation()}
+              className="-ml-[2px] grid h-8 w-5 shrink-0 cursor-grab touch-none place-items-center rounded-sm text-muted-foreground hover:bg-card hover:text-foreground active:cursor-grabbing" data-oid="f458720506" data-oid-shared="true">
+              <GripVertical className="h-3.5 w-3.5" data-oid="feda166974" data-oid-shared="true" />
+            </button>
             {layer.type === "vector" ?
             <button
               type="button"
@@ -234,8 +296,23 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
                 data-index={itemIndex}
                 aria-selected={studio.selection.includes(it.id)}
                 data-hidden={!!it.hidden}
+                data-drop-key={`I|${layer.id}|${it.id}`}
+                data-drop={dropAt(`I|${layer.id}|${it.id}`)}
+                data-dragging={draggingId === it.id}
                 onClick={(e) => !it.hidden && selectItem(layer.id, it.id, e.shiftKey)}
-                className="flex cursor-pointer items-center gap-ds-xs rounded-sm px-ds-xs py-[3px] text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground data-[hidden=true]:opacity-50" data-oid="83534bb0e9" data-oid-shared="true" data-oid-text-editable="false">
+                className="flex cursor-pointer items-center gap-ds-xs rounded-sm px-ds-xs py-[3px] text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground data-[hidden=true]:opacity-50 data-[dragging=true]:opacity-40 data-[drop=above]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=below]:shadow-[inset_0_-2px_0_0_var(--primary)]" data-oid="83534bb0e9" data-oid-shared="true" data-oid-text-editable="false">
+                      <button
+                  type="button"
+                  aria-label={`Drag to reorder ${itemLabel(it)}`}
+                  title="Drag to reorder — drop on another layer to move it there"
+                  onPointerDown={(e) => startDrag(e, "item", it.id)}
+                  onPointerMove={moveDrag}
+                  onPointerUp={endDrag}
+                  onPointerCancel={endDrag}
+                  onClick={(e) => e.stopPropagation()}
+                  className="-ml-[2px] grid h-6 w-5 shrink-0 cursor-grab touch-none place-items-center rounded-sm hover:bg-card hover:text-foreground active:cursor-grabbing" data-oid="726afff6a1" data-oid-shared="true">
+                        <GripVertical className="h-3 w-3" data-oid="4ef8cf6781" data-oid-shared="true" />
+                      </button>
                       <button
                   type="button"
                   aria-label={it.hidden ? `Show ${itemLabel(it)}` : `Hide ${itemLabel(it)}`}

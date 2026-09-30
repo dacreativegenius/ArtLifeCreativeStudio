@@ -18,7 +18,7 @@ export function NewProjectDialog({ studio }: {studio: Studio;}) {
 
   useEffect(() => {
     if (!open) return;
-    setName("Untitled");
+    setName(studio.freshName());
     setW(String(studio.docSize.w));
     setH(String(studio.docSize.h));
     const esc = (e: KeyboardEvent) => e.key === "Escape" && studio.setNewDialogOpen(false);
@@ -48,14 +48,14 @@ export function NewProjectDialog({ studio }: {studio: Studio;}) {
         onPointerDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
-          if (valid) studio.newDocument(wn, hn, name.trim() || "Untitled");
+          if (valid) studio.newDocument(wn, hn, name.trim() || studio.freshName());
         }}
         className="w-full max-w-[440px] shrink-0 rounded-xl border border-border bg-card p-ds-xl shadow-2xl" data-oid="d2ec69e3d8">
         
         <div className="flex items-start justify-between gap-ds-md" data-oid="44b13bde67">
           <div data-oid="41996b50da">
             <h2 id="new-project-title" className="type-display text-foreground" data-oid="b183eb77a0">New project</h2>
-            <p className="mt-ds-xs type-body text-muted-foreground" data-oid="2a2cd9b1d9">Type any canvas size in pixels. The current drawing is replaced — save it as .dtm first to keep it.</p>
+            <p className="mt-ds-xs type-body text-muted-foreground" data-oid="2a2cd9b1d9">Type any canvas size in pixels. Each new project gets its own name, so saving never overwrites an earlier drawing.</p>
           </div>
           <button type="button" aria-label="Close" onClick={() => studio.setNewDialogOpen(false)} className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" data-oid="3e973aa088">
             <X className="h-4 w-4" data-oid="01cd0980b1" />
@@ -111,7 +111,7 @@ export function NewProjectDialog({ studio }: {studio: Studio;}) {
 
         <div className="mt-ds-xl flex items-center justify-end gap-ds-sm" data-oid="d11fe27af7">
           <button type="button" className="ds-button ds-button-secondary" onClick={() => studio.setNewDialogOpen(false)} data-oid="c87a2bbefd">
-            Cancel
+            Keep current drawing
           </button>
           <button type="submit" disabled={!valid} className="ds-button ds-button-primary disabled:opacity-40" data-oid="3ab39fae6b">
             Create canvas

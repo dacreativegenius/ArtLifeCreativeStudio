@@ -13,6 +13,7 @@ import {
   type ShapeItem,
   type StrokeItem,
   type SubPath,
+  uid,
 } from "./types"
 
 export type XY = { x: number; y: number }
@@ -55,6 +56,26 @@ export function catmull(points: Pt[]): Pt[] {
     }
   }
   out.push(points[points.length - 1])
+  return out
+}
+
+/**
+ * Catmull-Rom anchors → one cubic bezier per anchor span (for SVG export). Keeps the
+ * exported path at exactly the anchor count instead of hundreds of resampled points.
+ */
+export function catmullBeziers(P: (XY & { corner?: boolean })[]): { c1: XY; c2: XY; to: XY }[] {
+  const out: { c1: XY; c2: XY; to: XY }[] = []
+  for (let i = 0; i < P.length - 1; i++) {
+    const p1 = P[i]
+    const p2 = P[i + 1]
+    const p0 = p1.corner ? p1 : P[i - 1] ?? p1
+    const p3 = p2.corner ? p2 : P[i + 2] ?? p2
+    out.push({
+      c1: { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 },
+      c2: { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 },
+      to: { x: p2.x, y: p2.y },
+    })
+  }
   return out
 }
 
@@ -227,7 +248,7 @@ function ellipseCenter(pts: XY[]) {
   return { x: (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4, y: (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4 }
 }
 
-function ellipseSegments(pts: XY[]) {
+export function ellipseSegments(pts: XY[]) {
   const c = ellipseCenter(pts)
   return [0, 1, 2, 3].map((i) => {
     const P = pts[i]
@@ -367,6 +388,15 @@ function drawErase(ctx: CanvasRenderingContext2D, s: EraseItem) {
   if (!pts.length) return
   ctx.globalCompositeOperation = "destination-out"
   ctx.globalAlpha = 1
+  if (s.poly) {
+    // lasso cut-out (pencil selection): remove everything inside the polygon
+    ctx.fillStyle = "#000000"
+    ctx.beginPath()
+    pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
+    ctx.closePath()
+    ctx.fill()
+    return
+  }
   ctx.strokeStyle = "#000000"
   ctx.lineWidth = s.size
   ctx.lineCap = "round"
@@ -804,7 +834,8 @@ export function strokeToBlob(s: StrokeItem): PathItem | null {
     const a = as - Math.PI / 2 - (Math.PI * k) / CAP
     poly.push({ x: pts[0].x + Math.cos(a) * widths[0], y: pts[0].y + Math.sin(a) * widths[0] })
   }
-  const simple = rdpClosed(poly, 0.35)
+  // tolerance grows with brush size: far fewer anchors, smooth bezier handles keep the curve
+  const simple = rdpClosed(poly, Math.max(0.6, Math.min(2.2, s.size * 0.06)))
   if (simple.length < 3) return null
   return { ...base, subpaths: [{ closed: true, nodes: smoothNodes(simple) }] }
 }
@@ -855,12 +886,42 @@ export function eraseFromPath(it: PathItem, er: EraseItem): PathItem | null | un
   }
   if (before - after < 2) return undefined
   if (after < 4 || maxX < 0) return null
-  const subs = traceMask({ grown, W, H, minX, minY, maxX, maxY })
+  const subs = traceMask({ grown, W, H, minX, minY, maxX, maxY }, Math.max(1.1, scale * 0.8))
   if (!subs.length) return null
   const ox = b.x - pad
   const oy = b.y - pad
   const f = (x: number, y: number) => ({ x: x / scale + ox, y: y / scale + oy })
   return mapPath({ ...it, subpaths: subs, evenOdd: true }, f)
+}
+
+/**
+ * Break a multi-contour filled path into separate objects: every outer contour becomes
+ * its own shape, holes stay with the outer contour that contains them.
+ */
+export function splitPath(it: PathItem): PathItem[] {
+  if (it.subpaths.length < 2 || it.subpaths.some((sp) => !sp.closed)) return [it]
+  const subs = it.subpaths
+  const polys = subs.map((sp) => subpathSamples(sp, 6))
+  const area = polys.map((p) => polyArea(p))
+  const depth = polys.map((p, i) => {
+    const q = p[0]
+    let d = 0
+    polys.forEach((o, j) => {
+      if (j !== i && o.length > 2 && pointInPoly(q.x, q.y, o)) d++
+    })
+    return d
+  })
+  const outers = subs.map((_, i) => i).filter((i) => depth[i] % 2 === 0)
+  if (outers.length < 2) return [it]
+  const groups = new Map<number, SubPath[]>(outers.map((i) => [i, [subs[i]]]))
+  subs.forEach((sp, i) => {
+    if (depth[i] % 2 === 0) return
+    const q = polys[i][0]
+    let best = -1
+    for (const o of outers) if (pointInPoly(q.x, q.y, polys[o]) && (best < 0 || area[o] < area[best])) best = o
+    if (best >= 0) groups.get(best)!.push(sp)
+  })
+  return outers.map((o, k) => ({ ...it, id: k === 0 ? it.id : uid("f"), subpaths: groups.get(o)! }))
 }
 
 /** Convert a Pressure Ink stroke (legacy) or keep any other item as-is. */
@@ -940,7 +1001,7 @@ function smoothNodes(pts: XY[]): PathNode[] {
 }
 
 /** Trace every boundary (outer edges + holes) of a region mask into closed bezier sub-paths. */
-export function traceMask(m: NonNullable<ReturnType<typeof floodMask>>): SubPath[] {
+export function traceMask(m: NonNullable<ReturnType<typeof floodMask>>, eps = 1.1): SubPath[] {
   const { grown, W, H, minX, minY, maxX, maxY } = m
   const at = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && grown[y * W + x] === 1
   const VW = W + 1
@@ -979,7 +1040,7 @@ export function traceMask(m: NonNullable<ReturnType<typeof floodMask>>): SubPath
         const q = loop[(i + 1) % loop.length]
         return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }
       })
-      const simple = rdpClosed(mids, 1.1)
+      const simple = rdpClosed(mids, eps)
       if (simple.length < 3 || polyArea(simple) < 3) continue
       out.push({ closed: true, nodes: smoothNodes(simple) })
     }

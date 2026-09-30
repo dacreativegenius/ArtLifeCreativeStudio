@@ -72,9 +72,21 @@ export function ObjectPanel({ studio }: {studio: Studio;}) {
         </p>
       }
 
+      <Panel title="Group">
+        <div className="grid grid-cols-2 gap-ds-sm" data-oid="751aae971f">
+          <button type="button" disabled={studio.selection.length < 2} onClick={studio.groupSelection} className="inline-flex h-12 items-center justify-center gap-ds-sm rounded-lg border border-border bg-background text-label font-semibold text-foreground hover:border-primary hover:text-primary active:bg-secondary disabled:opacity-35" data-oid="21c037b627">
+            <Group className="h-5 w-5" data-oid="0ab8f77882" /> Group
+          </button>
+          <button type="button" disabled={!studio.selectionGrouped} onClick={studio.ungroupSelection} className="inline-flex h-12 items-center justify-center gap-ds-sm rounded-lg border border-border bg-background text-label font-semibold text-foreground hover:border-primary hover:text-primary active:bg-secondary disabled:opacity-35" data-oid="bc49d4a0bb">
+            <Ungroup className="h-5 w-5" data-oid="dd3f502641" /> Ungroup
+          </button>
+        </div>
+        <p className="mt-ds-xs type-caption text-muted-foreground" data-oid="b2ea63d7da">SELECT 2+ OBJECTS TO GROUP · CTRL G / CTRL ⇧ G ON A KEYBOARD</p>
+      </Panel>
+
       <Panel title="Grid & guides">
-        <div className="flex items-center gap-ds-sm" data-oid="751aae971f">
-          <span className="flex-1 text-label text-muted-foreground" data-oid="21c037b627">Grid size</span>
+        <div className="flex items-center gap-ds-sm" data-oid="d3550e55d0">
+          <span className="flex-1 text-label text-muted-foreground" data-oid="6e10f522c5">Grid size</span>
           <NumInput label="Grid size" value={studio.gridSize} min={2} max={1000} suffix="px" onChange={studio.setGridSize} className="w-16 border-border bg-background" />
         </div>
         <div className="mt-ds-sm flex flex-col gap-ds-xs" data-oid="1a14b41c48">
@@ -86,7 +98,7 @@ export function ObjectPanel({ studio }: {studio: Studio;}) {
             <input type="checkbox" checked={studio.snapToGrid} onChange={(e) => studio.setSnapToGrid(e.target.checked)} className="accent-primary" data-oid="bd4e2cea5c" />
             Snap to grid <kbd className="ml-auto type-caption opacity-70" data-oid="f5be04c4d5">Ctrl ⇧ '</kbd>
           </label>
-          <label className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="6e10f522c5">
+          <label className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="d40ca04b21">
             <input type="checkbox" checked={studio.smartGuides} onChange={(e) => studio.setSmartGuides(e.target.checked)} className="accent-primary" data-oid="698730a2e5" />
             Smart guides <kbd className="ml-auto type-caption opacity-70" data-oid="d601d86f83">Ctrl U</kbd>
           </label>
@@ -189,7 +201,7 @@ export function ObjectPanel({ studio }: {studio: Studio;}) {
         <p className="mt-ds-xs type-caption text-muted-foreground" data-oid="5dc29102e6">STROKES BECOME FILLED SHAPES · THE ERASER THEN CUTS THEM</p>
       </Panel>
 
-      <Panel title="Arrange & group">
+      <Panel title="Arrange">
         <div className="grid grid-cols-4 gap-ds-xs" data-oid="50c2a70602">
           <button type="button" disabled={!has} aria-label="Bring to front (Ctrl+Shift+])" title="Bring to front · Ctrl ⇧ ]" onClick={() => studio.arrangeSelection("front")} className={tile} data-oid="5c069b5cf5" data-oid-classname-dynamic="true">
             <BringToFront className="h-4 w-4" data-oid="fbddd83264" />
@@ -204,15 +216,7 @@ export function ObjectPanel({ studio }: {studio: Studio;}) {
             <SendToBack className="h-4 w-4" data-oid="a9ceedb3ad" />
           </button>
         </div>
-        <div className="mt-ds-xs grid grid-cols-2 gap-ds-xs" data-oid="a9d939dba1">
-          <button type="button" disabled={studio.selection.length < 2} onClick={studio.groupSelection} className="inline-flex h-9 items-center justify-center gap-ds-xs rounded-md border border-border bg-background text-label text-muted-foreground hover:border-muted-foreground hover:text-foreground disabled:opacity-35" data-oid="1e3f9b4394">
-            <Group className="h-4 w-4" data-oid="704a152491" /> Group
-          </button>
-          <button type="button" disabled={!studio.selectionGrouped} onClick={studio.ungroupSelection} className="inline-flex h-9 items-center justify-center gap-ds-xs rounded-md border border-border bg-background text-label text-muted-foreground hover:border-muted-foreground hover:text-foreground disabled:opacity-35" data-oid="c1aefd6837">
-            <Ungroup className="h-4 w-4" data-oid="855a84d2d1" /> Ungroup
-          </button>
-        </div>
-        <p className="mt-ds-xs type-caption text-muted-foreground" data-oid="ac3282e354">CTRL G GROUPS · CTRL ⇧ G UNGROUPS</p>
+        <p className="mt-ds-xs type-caption text-muted-foreground" data-oid="ac3282e354">OR DRAG THE ⠇ HANDLES IN THE LAYERS TAB</p>
       </Panel>
     </>);
 
