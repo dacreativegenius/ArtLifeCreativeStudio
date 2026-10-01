@@ -14,7 +14,7 @@ function Nib({ strokeWidth = 1.75 }: {strokeWidth?: number;}) {
 /** Add Anchor Point tool — pen nib with a plus. */
 export function PenPlusIcon({ className, strokeWidth = 1.75 }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" data-oid="fb6e472a29" data-oid-component-root="true" data-oid-classname-dynamic="true">
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" data-oid="fb6e472a29" data-oid-component-root="true" data-oid-classname-dynamic="true" style={{ borderColor: "#000000", borderStyle: "solid", borderWidth: "0px", boxShadow: "0px 4px 6px 0px rgba(0,0,0,0.5)" }}>
       <Nib strokeWidth={strokeWidth} />
       <path d="M19 2.5v6M16 5.5h6" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
     </svg>);
