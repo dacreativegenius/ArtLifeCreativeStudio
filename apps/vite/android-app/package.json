@@ -1,8 +1,8 @@
 {
   "name": "art-life-creative-studio-android",
   "productName": "Art Life Creative Studio",
-  "version": "1.0.4",
-  "androidVersionCode": 4,
+  "version": "1.0.5",
+  "androidVersionCode": 5,
   "description": "Art Life Creative Studio — Android APK (Capacitor)",
   "private": true,
   "scripts": {

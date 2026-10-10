@@ -1,7 +1,7 @@
 /* Art Life Creative Studio — offline service worker.
  * Pages: network first (always get the newest version), cached copy when offline.
  * Scripts, styles, icons, fonts: served from cache instantly, refreshed in the background. */
-const CACHE = "artlife-v1.0.4"
+const CACHE = "artlife-v1.0.5"
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./favicon.svg", "./icon-maskable.svg"]
 
 self.addEventListener("install", (event) => {

@@ -36,7 +36,7 @@ export type AlignMode = "left" | "hcenter" | "right" | "top" | "vcenter" | "bott
 export type ArrangeMode = "front" | "forward" | "backward" | "back"
 import { buildSVG, parseDTM, safeName, saveFile, serializeDTM, type SaveResult } from "../../lib/art/fileio"
 import { desktop } from "../../lib/art/desktop"
-import { ANDROID_SAVE_FOLDER } from "../../lib/art/native"
+import { ANDROID_SAVE_FOLDER, lastNativeSaveName } from "../../lib/art/native"
 
 export interface View {
   x: number
@@ -608,7 +608,7 @@ export function useStudio() {
 
   const report = (res: SaveResult, filename: string) => {
     if (res === "saved") flash(`Saved ${filename}`)
-    else if (res === "documents") flash(`Saved to Documents/${ANDROID_SAVE_FOLDER}/${filename}`)
+    else if (res === "documents") flash(`Saved to Documents/${ANDROID_SAVE_FOLDER}/${lastNativeSaveName() || filename}`)
     else if (res === "shared") flash(`Sent ${filename} to Files`)
     else if (res === "downloaded") flash(`${filename} saved to Downloads`)
   }

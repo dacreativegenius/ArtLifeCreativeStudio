@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Group, Link2, Scissors, Trash2, Ungroup } from "lucide-react";
 import { setDrawing } from "../../lib/art/activity";
+import { recognizeShape, snapLineAngle } from "../../lib/art/quickshape";
+
+/** Hold-to-shape: keep the pen still this long at the end of a stroke to snap it to a clean shape. */
+const HOLD_MS = 2000;
+/** Pen / finger wobble (screen px) that still counts as holding still. */
+const HOLD_SLOP = 6;
 import { outlineItem } from "../../lib/art/pathfinder";
 import type { Studio, View } from "./useStudio";
 import {
@@ -183,6 +189,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const penEndHover = useRef<OpenEnd | null>(null);
   const liveCache = useRef<{canvas: HTMLCanvasElement;id: string;key: string;frozen: number;} | null>(null);
   const rawLast = useRef<Pt | null>(null);
+  const holdTimer = useRef(0);
+  const holdAt = useRef<{sx: number;sy: number;} | null>(null);
+  const snapped = useRef<null | "line" | "shape">(null);
   const endsCache = useRef<{layers: Layer[];list: OpenEnd[];} | null>(null);
   const [ends, setEndsState] = useState<PathEnd[]>([]);
   const endsRef = useRef<PathEnd[]>([]);
@@ -276,6 +285,33 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
 
   /* ---------- pen tool ---------- */
   const penNodes = () => pen.current?.item.subpaths[0].nodes ?? [];
+
+  /* ---------- hold-to-shape ---------- */
+  const clearHold = () => {
+    window.clearTimeout(holdTimer.current);
+    holdAt.current = null;
+  };
+
+  const snapLive = () => {
+    const it = live.current;
+    if (drag.current?.type !== "draw" || !it || it.kind !== "stroke" || snapped.current) return;
+    const res = recognizeShape(it.points, S.current.view.zoom);
+    if (!res) return;
+    it.points = res.points;
+    snapped.current = res.kind === "line" ? "line" : "shape";
+    predicted.current = [];
+    if (liveCache.current) liveCache.current.id = "";
+    dirty.current = true;
+    S.current.flash(`Snapped to ${res.label} · lift the pen to keep it${res.kind === "line" ? " · move to aim the line" : ""}`);
+  };
+
+  const armHold = (sx: number, sy: number) => {
+    window.clearTimeout(holdTimer.current);
+    holdAt.current = { sx, sy };
+    holdTimer.current = window.setTimeout(snapLive, HOLD_MS);
+  };
+
+  useEffect(() => () => window.clearTimeout(holdTimer.current), []);
 
   const commitPen = () => {
     const p = pen.current;
@@ -1401,6 +1437,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const startGesture = () => {
     // a second finger cancels whatever the first finger started
     setDrawing(false);
+    clearHold();
     if (drag.current?.type === "draw" || drag.current?.type === "shape") live.current = null;
     if (drag.current?.type === "pen" && drag.current.mode === "new" && pen.current) {
       const nodes = penNodes();
@@ -1513,6 +1550,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             seed: Math.floor(Math.random() * 1e9)
           };
           rawLast.current = { x, y, p };
+          snapped.current = null;
+          armHold(sx, sy);
           setDrawing(true);
           drag.current = { type: "draw" };
           break;
@@ -1522,6 +1561,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           if (!layerId) return;
           liveLayer.current = layerId;
           live.current = { id: uid("e"), kind: "erase", size: st.eraserSize, points: [{ x, y, p: 1 }] };
+          snapped.current = null;
           setDrawing(true);
           drag.current = { type: "draw" };
           break;
@@ -1782,6 +1822,17 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           st.setView((v) => ({ ...v, x: d.vx + (sx - d.sx), y: d.vy + (sy - d.sy) }));
           break;
         case "draw":{
+            if (snapped.current) {
+              // after snapping, a line's end keeps following the pen so you can aim it; other shapes stay put
+              const it = live.current;
+              if (snapped.current === "line" && it && it.kind === "stroke" && it.points.length === 2) {
+                const q = snapLineAngle(it.points[0], { x, y });
+                it.points[1] = { ...it.points[1], x: q.x, y: q.y };
+              }
+              break;
+            }
+            const ha = holdAt.current;
+            if (ha && Math.hypot(sx - ha.sx, sy - ha.sy) > HOLD_SLOP) armHold(sx, sy);
             const evs = e.nativeEvent.getCoalescedEvents?.() ?? [];
             if (evs.length) evs.forEach(addPoint);else
             addPoint(e.nativeEvent);
@@ -2114,6 +2165,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     guides.current = null;
     predicted.current = [];
     setDrawing(false);
+    clearHold();
     setPanning(false);
     const st = S.current;
     dirty.current = true;
@@ -2136,7 +2188,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       live.current = null;
       if (!it) return;
       // fewer anchors: Mono Liner gets a looser fit, Pressure Ink is slimmed again when it becomes a blob
-      if (it.kind === "stroke" && it.brush === "vector-fixed") {
+      if (it.kind === "stroke" && snapped.current) {
+        // hold-to-shape result: already clean geometry, keep it exactly
+      } else if (it.kind === "stroke" && it.brush === "vector-fixed") {
         // v1.0.4 Mono Liner: end exactly where the pen lifted and keep the corners you drew
         const rl = rawLast.current;
         const lp = it.points[it.points.length - 1];
