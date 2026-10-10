@@ -71,7 +71,7 @@ function ToolOptions({ studio }: {studio: Studio;}) {
             Fill
           </label>
         }
-        <p className="type-caption text-muted-foreground" data-oid="4f56fef441">{t === "pen" ? "CLICK CORNER · DRAG CURVE · CLICK START TO CLOSE · ENTER FINISHES · ⌫ UNDOES POINT" : "SHIFT constrains"}</p>
+        <p className="type-caption text-muted-foreground" data-oid="4f56fef441">{t === "pen" ? "CLICK CORNER · DRAG CURVE · CLICK LAST ANCHOR CUTS ITS HANDLE · CLICK AN OPEN END TO CONTINUE · ENTER FINISHES" : "SHIFT constrains"}</p>
       </div>);
 
   }
@@ -102,7 +102,7 @@ function ToolOptions({ studio }: {studio: Studio;}) {
           <Trash2 className="h-3.5 w-3.5" data-oid="82d232198f" /> Delete
         </button>
         <p className="type-caption text-muted-foreground" data-oid="f1f71b57d4">
-          {t === "transform" ? "CORNERS SCALE · TOP HANDLE ROTATES · SHIFT SNAPS 15°" : t === "direct" ? "DRAG ANCHORS TO RESHAPE · DRAG ○ INSIDE A CORNER TO ROUND IT" : t === "select" ? "CORNERS SCALE · TOP HANDLE ROTATES" : t === "move" ? "CORNERS SCALE · TOP HANDLE ROTATES · NO SELECTION MOVES LAYER" : "DRAW A LOOP · SHIFT ADDS"}
+          {t === "transform" ? "CORNERS SCALE · TOP HANDLE ROTATES · SHIFT SNAPS 15°" : t === "direct" ? "DRAG ANCHORS TO RESHAPE · TAP 2 END ANCHORS → JOIN (CTRL J)" : t === "select" ? "CORNERS SCALE · TOP HANDLE ROTATES" : t === "move" ? "CORNERS SCALE · TOP HANDLE ROTATES · NO SELECTION MOVES LAYER" : "DRAW A LOOP · SHIFT ADDS"}
         </p>
       </div>);
 
@@ -111,6 +111,60 @@ function ToolOptions({ studio }: {studio: Studio;}) {
     <p className="type-caption text-muted-foreground" data-oid="d383281115" data-oid-component-root="true">
       {t === "penAdd" ? "CLICK A PATH OR SHAPE TO ADD AN ANCHOR · CURVE SHAPE IS KEPT" : t === "penDelete" ? "CLICK AN ANCHOR TO REMOVE IT" : t === "penConvert" ? "CLICK ANCHOR: SMOOTH ⇄ CORNER · DRAG ANCHOR: PULL OUT CURVE · DRAG HANDLE: BREAK IT" : t === "eyedropper" ? "CLICK TO SAMPLE · ALT+CLICK WITH BRUSH" : t === "zoom" ? "CLICK ZOOM IN · ALT+CLICK ZOOM OUT" : "DRAG TO PAN · HOLD SPACE ANYWHERE"}
     </p>);
+
+}
+
+/** v1.0.4: tap the document name to rename it (Enter saves, Esc cancels). */
+function DocName({ studio }: {studio: Studio;}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(studio.docName);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+  const commit = () => {
+    const name = draft.replace(/\.dtm$/i, "").replace(/[\\/:*?"<>|]+/g, "").trim();
+    if (name && name !== studio.docName) {
+      studio.setDocName(name);
+      studio.flash(`Renamed to “${name}”`);
+    }
+    setEditing(false);
+  };
+  if (editing) {
+    return (
+      <label className="flex items-center gap-[2px] border-l border-border pl-ds-md" data-oid="379d2e6e08" data-oid-component-root="true">
+        <span className="sr-only" data-oid="545967e4a4">Document name</span>
+        <input
+          ref={inputRef}
+          value={draft}
+          maxLength={80}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="ds-input h-8 w-[180px] type-caption md:h-7" data-oid="72d6ebb3a4" />
+        <span className="type-caption text-muted-foreground" data-oid="0ddf8ab4ec">.dtm</span>
+      </label>);
+
+  }
+  return (
+    <button
+      type="button"
+      title="Rename document"
+      aria-label={`Rename document ${studio.docName}`}
+      onClick={() => {
+        setDraft(studio.docName);
+        setEditing(true);
+      }}
+      className="flex h-8 min-w-0 max-w-[140px] items-center rounded-md border-l border-border px-ds-sm type-caption text-foreground hover:bg-secondary md:h-7 md:max-w-[180px]" data-oid="ea80395b7f" data-oid-component-root="true">
+      <span className="truncate" data-oid="782bc31915">{studio.docName}</span>
+      <span className="text-muted-foreground" data-oid="7346db8f88">.dtm</span>
+    </button>);
 
 }
 
@@ -140,7 +194,7 @@ function SaveExportMenu({ studio }: {studio: Studio;}) {
         <Download className="h-3.5 w-3.5" data-oid="6413f089d1" /> <span className="hidden md:inline" data-oid="33b758e20f">Save / Export</span> <ChevronDown className="h-3 w-3" data-oid="8d5267fcda" />
       </button>
       {open &&
-      <div role="menu" className="ds-menu-popover w-[248px]" data-oid="379d2e6e08">
+      <div role="menu" className="ds-menu-popover w-[248px]" data-oid="976696f68f">
           <p className="px-ds-sm pt-ds-xs type-caption text-muted-foreground" data-oid="e36e90f721">SAVE</p>
           <button type="button" role="menuitem" className="ds-menu-item flex items-center gap-ds-sm" onClick={() => run(studio.saveDTM)} data-oid="7fc7ec1a17">
             <Save className="h-3.5 w-3.5" data-oid="50b43c213a" />
@@ -176,7 +230,7 @@ export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: 
           <h1 className="whitespace-nowrap text-heading font-bold leading-[1.1] tracking-[-0.02em] text-foreground" data-oid="13a9d052e2">
             Art Life <span className="font-medium text-muted-foreground" data-oid="9509dd1f61">Creative Studio</span>
           </h1>
-          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:05834ca73811|text">{desktop ? "DESKTOP" : isNativeApp ? "ANDROID" : isStandalone() ? "MOBILE APP" : "WEB"} v1.0.3</span>
+          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:05834ca73811|text">{desktop ? "DESKTOP" : isNativeApp ? "ANDROID" : isStandalone() ? "MOBILE APP" : "WEB"} v1.0.4</span>
         </div>
       </div>
 
@@ -206,9 +260,7 @@ export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: 
         </button>
       </div>
 
-      <p className="hidden max-w-[160px] truncate border-l md:block border-border pl-ds-md type-caption text-foreground" title={`${studio.docName}.dtm`} data-oid="79f4256f29" data-oid-text-editable="false" data-oid-text-source="expression:9d9f7d6e6a4b|element:span">
-        {studio.docName}<span className="text-muted-foreground" data-oid="8e09a1a12e">.dtm</span>
-      </p>
+      <DocName studio={studio} />
 
       <div className="order-last flex min-w-0 basis-full items-center overflow-x-auto whitespace-nowrap border-t border-border pt-ds-xs md:order-none md:flex-1 md:basis-auto md:overflow-visible md:border-t-0 md:border-l md:pl-ds-md md:pt-0" data-oid="b9de1a1872">
         <ToolOptions studio={studio} />
@@ -234,7 +286,7 @@ export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: 
         <button type="button" aria-label="Zoom in" className={barBtn} onClick={() => studio.zoomBy(1.25)} data-oid="e4b7498cd4" data-oid-classname-dynamic="true">
           <Plus className="h-3.5 w-3.5" data-oid="fa69b86c35" />
         </button>
-        <button type="button" aria-label="Fit canvas to screen" className={barBtn} onClick={studio.requestFit} data-oid="0ddf8ab4ec" data-oid-classname-dynamic="true">
+        <button type="button" aria-label="Fit canvas to screen" className={barBtn} onClick={studio.requestFit} data-oid="a35cfe2b8b" data-oid-classname-dynamic="true">
           <Maximize className="h-3.5 w-3.5" data-oid="814e355a4e" /> <span className="hidden md:inline" data-oid="5d87461fe6">Fit</span>
         </button>
         <button

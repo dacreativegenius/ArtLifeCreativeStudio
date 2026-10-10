@@ -4,6 +4,7 @@ import { desktop } from "../../lib/art/desktop"
 import { DOC_H, DOC_W } from "../../lib/art/types"
 import { serializeDTM } from "../../lib/art/fileio"
 import { readAutosave, requestPersistentStorage, writeAutosave } from "../../lib/art/pwa"
+import { afterDrawing } from "../../lib/art/activity"
 
 /**
  * Browser / phone version: keeps the current drawing in the device's storage so closing the tab,
@@ -41,17 +42,19 @@ export function useAutosave(studio: Studio) {
         savedAt: Date.now(),
         text: serializeDTM({ name: docName, width: DOC_W, height: DOC_H, layers, activeLayerId, primary, secondary, swatches }),
       })
-    const t = window.setTimeout(save, 1200)
+    // v1.0.4: serialising a big drawing is expensive — wait until the pen is lifted and the
+    // device is idle, so autosave never interrupts the next stroke.
+    const cancel = afterDrawing(() => void save(), 2500)
     // iOS / Android may freeze the page as soon as it is hidden — save immediately then.
     const onHide = () => {
       if (document.visibilityState === "hidden") {
-        window.clearTimeout(t)
+        cancel()
         void save()
       }
     }
     document.addEventListener("visibilitychange", onHide)
     return () => {
-      window.clearTimeout(t)
+      cancel()
       document.removeEventListener("visibilitychange", onHide)
     }
   }, [layers, docName, activeLayerId, primary, secondary, swatches])

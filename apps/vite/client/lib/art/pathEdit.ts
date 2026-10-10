@@ -313,6 +313,94 @@ function setNode(it: PathItem, sub: number, idx: number, fn: (n: PathNode, sp: S
   return mapSub(it, sub, (sp) => ({ ...sp, nodes: sp.nodes.map((n, i) => (i === idx ? fn(n, sp) : n)) })) ?? it
 }
 
+/* ---------------- v1.0.4: continue open paths + join end anchors ---------------- */
+
+/** An end anchor of an open sub-path: end 0 = first anchor, 1 = last anchor. */
+export type PathEnd = { id: string; sub: number; end: 0 | 1 }
+
+/**
+ * Items whose open ends can be continued with the Pen or joined: pen paths, lines and
+ * Mono Liner strokes (converted to an equivalent bezier path with the same id and style).
+ */
+export function asJoinablePath(it: Item): PathItem | null {
+  if (it.hidden) return null
+  if (it.kind === "path") return it.blob ? null : it
+  if (it.kind === "shape" && it.shape === "line") return toPathItem(it)
+  if (it.kind === "stroke" && it.brush === "vector-fixed" && it.points.length >= 2) {
+    const p = strokeAsPath(it.points)
+    return { ...p, id: it.id, stroke: it.color, size: it.size, opacity: it.opacity, group: it.group }
+  }
+  return null
+}
+
+/** All open-path end anchors of an item. */
+export function openEnds(p: PathItem): (PathEnd & { x: number; y: number })[] {
+  const out: (PathEnd & { x: number; y: number })[] = []
+  p.subpaths.forEach((sp, s) => {
+    if (sp.closed || sp.nodes.length < 1) return
+    const a = sp.nodes[0]
+    const b = sp.nodes[sp.nodes.length - 1]
+    out.push({ id: p.id, sub: s, end: 0, x: a.x, y: a.y })
+    if (sp.nodes.length > 1) out.push({ id: p.id, sub: s, end: 1, x: b.x, y: b.y })
+  })
+  return out
+}
+
+/** Reverse a sub-path's direction (handles swap sides). */
+export function reverseSub(sp: SubPath): SubPath {
+  return { closed: sp.closed, nodes: sp.nodes.slice().reverse().map((n) => ({ x: n.x, y: n.y, ix: n.ox, iy: n.oy, ox: n.ix, oy: n.iy })) }
+}
+
+const SAME = 0.75
+
+/**
+ * Join two end anchors. Same sub-path → it closes. Otherwise the two runs become one path; if
+ * the anchors sit on top of each other they merge into a single anchor, else a segment joins them.
+ * Returns the joined item (keeps A's id + style) and the id of B when B was absorbed.
+ */
+export function joinEnds(A: PathItem, ea: PathEnd, B: PathItem, eb: PathEnd): { item: PathItem; removeId: string | null } | null {
+  const spA = A.subpaths[ea.sub]
+  const spB = B.subpaths[eb.sub]
+  if (!spA || !spB || spA.closed || spB.closed) return null
+  if (A.id === B.id && ea.sub === eb.sub) {
+    if (ea.end === eb.end || spA.nodes.length < 2) return null
+    const nodes = spA.nodes.map((n) => ({ ...n }))
+    const first = nodes[0]
+    const last = nodes[nodes.length - 1]
+    if (nodes.length > 2 && Math.hypot(first.x - last.x, first.y - last.y) < SAME) {
+      first.ix = last.ix
+      first.iy = last.iy
+      nodes.pop()
+    }
+    return { item: { ...A, subpaths: A.subpaths.map((sp, i) => (i === ea.sub ? { closed: true, nodes } : sp)) }, removeId: null }
+  }
+  const a = ea.end === 1 ? spA : reverseSub(spA)
+  const b = eb.end === 0 ? spB : reverseSub(spB)
+  const an = a.nodes.map((n) => ({ ...n }))
+  const bn = b.nodes.map((n) => ({ ...n }))
+  const tail = an[an.length - 1]
+  const head = bn[0]
+  if (Math.hypot(tail.x - head.x, tail.y - head.y) < SAME) {
+    tail.ox = head.ox
+    tail.oy = head.oy
+    bn.shift()
+  }
+  const merged: SubPath = { closed: false, nodes: [...an, ...bn] }
+  if (A.id === B.id) {
+    const lo = Math.min(ea.sub, eb.sub)
+    const subpaths: SubPath[] = []
+    A.subpaths.forEach((sp, i) => {
+      if (i === lo) subpaths.push(merged)
+      else if (i !== ea.sub && i !== eb.sub) subpaths.push(sp)
+    })
+    return { item: { ...A, subpaths }, removeId: null }
+  }
+  const subpaths = A.subpaths.map((sp, i) => (i === ea.sub ? merged : sp))
+  B.subpaths.forEach((sp, i) => i !== eb.sub && subpaths.push(sp))
+  const stroke = A.stroke ?? B.stroke
+  return { item: { ...A, stroke, size: A.stroke ? A.size : B.size, subpaths }, removeId: B.id }
+}
+
 /** Anchor Point tool: retract both handles → hard corner. */
 export const makeCorner = (it: PathItem, sub: number, idx: number) =>
   setNode(it, sub, idx, (n) => ({ ...n, ix: n.x, iy: n.y, ox: n.x, oy: n.y }))

@@ -94,16 +94,51 @@ function taperAt(d: number, total: number, len: number) {
 
 /* ---------------- Pencil (graphite grain stamps) ---------------- */
 
-function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem) {
+export type PencilRange = {
+  /** Only stamp grain at arc length >= from. */
+  from?: number
+  /** Only stamp grain below this arc length; "stable" = the part of a live stroke that can no longer change. */
+  to?: number | "stable"
+  /** Number of real (non-predicted) points — needed for "stable". */
+  realCount?: number
+  /** Draw the Tech Pencil graphite core (default true). */
+  core?: boolean
+}
+
+/**
+ * Pencil grain. With a range it draws only part of the stroke, so a live stroke can be rendered
+ * incrementally (v1.0.4): the settled part is stamped once into a cache, only the tip is redrawn.
+ * Returns the resolved `to` length (the stable length when to = "stable").
+ */
+export function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem, range?: PencilRange): number {
   const pts = catmull(s.points)
-  if (!pts.length) return
+  if (!pts.length) return 0
   const pressure = s.brush === "pencil-pressure"
   const { lens, total } = cumulative(pts)
   const tLen = Math.min(total * 0.3, s.size * 5)
+  const from = range?.from ?? 0
+  let to = Infinity
+  if (range?.to === "stable") {
+    // Catmull span i depends on points i-1 … i+2, so spans before point n-2 are final.
+    const n = Math.min(range.realCount ?? s.points.length, s.points.length)
+    if (n < 4) to = 0
+    else {
+      let k = 0
+      for (let i = 0; i < n - 2; i++) {
+        const a = s.points[i]
+        const b = s.points[i + 1]
+        k += Math.max(1, Math.min(24, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 3)))
+      }
+      to = lens[Math.min(k, lens.length - 1)]
+      // the taper length is only final once the stroke is long enough; the end taper moves with the tip
+      if (pressure) to = total * 0.3 >= s.size * 5 ? Math.min(to, total - tLen - 1) : 0
+      to = Math.max(0, to)
+    }
+  } else if (typeof range?.to === "number") to = range.to
   ctx.fillStyle = s.color
   let idx = 0
   const stamp = (x: number, y: number, p: number, d: number) => {
-    const rnd = mulberry32(s.seed + idx++ * 7919)
+    const id = idx++
     let w: number
     let a: number
     if (pressure) {
@@ -115,6 +150,8 @@ function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem) {
       a = s.opacity * 0.85
     }
     const rad = Math.max(0.4, w / 2)
+    if (d < from || d >= to) return rad
+    const rnd = mulberry32(s.seed + id * 7919)
     const grains = Math.max(2, Math.round(rad * (pressure ? 1.8 : 2.2)))
     for (let g = 0; g < grains; g++) {
       const ang = rnd() * Math.PI * 2
@@ -141,7 +178,7 @@ function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem) {
     }
   }
   // Tech Pencil: a crisp graphite core under the grain keeps the line sharp
-  if (!pressure && pts.length > 1) {
+  if (!pressure && pts.length > 1 && range?.core !== false) {
     ctx.globalAlpha = s.opacity * 0.55
     ctx.strokeStyle = s.color
     ctx.lineWidth = Math.max(0.5, s.size * 0.5)
@@ -152,6 +189,7 @@ function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem) {
     ctx.stroke()
   }
   ctx.globalAlpha = 1
+  return to === Infinity ? total : to
 }
 
 /* ---------------- Vector ---------------- */
@@ -687,6 +725,55 @@ export function simplify(pts: Pt[], eps: number): Pt[] {
     }
   }
   return pts.filter((_, i) => keep[i])
+}
+
+/**
+ * Mono Liner (v1.0.4): find the corners you actually drew in the raw input (a sharp turn
+ * measured over a short arm on each side), keep them as hard corner anchors, and simplify
+ * each run between corners on its own — so corners stay corners and curves stay light.
+ * `arm` is in document units (pass ~7 screen px ÷ zoom).
+ */
+export function simplifyKeepCorners(raw: Pt[], eps: number, arm: number, minTurnDeg = 62): Pt[] {
+  const n = raw.length
+  if (n < 5) return simplify(raw, eps)
+  const { lens } = cumulative(raw)
+  const turn = new Float32Array(n)
+  let lo = 0
+  let hi = 0
+  for (let i = 1; i < n - 1; i++) {
+    while (lo < i && lens[i] - lens[lo + 1] >= arm) lo++
+    if (hi < i) hi = i
+    while (hi < n - 1 && lens[hi] - lens[i] < arm) hi++
+    if (lens[i] - lens[lo] < arm * 0.6 || lens[hi] - lens[i] < arm * 0.6) continue
+    const a = raw[lo]
+    const b = raw[i]
+    const c = raw[hi]
+    const a1 = Math.atan2(b.y - a.y, b.x - a.x)
+    const a2 = Math.atan2(c.y - b.y, c.x - b.x)
+    let d = Math.abs(a2 - a1)
+    if (d > Math.PI) d = Math.PI * 2 - d
+    turn[i] = d
+  }
+  const thr = (minTurnDeg * Math.PI) / 180
+  const corners: number[] = []
+  for (let i = 1; i < n - 1; i++) {
+    if (turn[i] < thr) continue
+    // local maximum within one arm on each side
+    let best = true
+    for (let j = i - 1; j >= 0 && lens[i] - lens[j] < arm; j--) if (turn[j] > turn[i]) best = false
+    for (let j = i + 1; j < n && lens[j] - lens[i] < arm; j++) if (turn[j] >= turn[i]) best = false
+    if (best && (!corners.length || lens[i] - lens[corners[corners.length - 1]] >= arm)) corners.push(i)
+  }
+  if (!corners.length) return simplify(raw, eps)
+  const out: Pt[] = []
+  const cuts = [0, ...corners, n - 1]
+  for (let k = 0; k < cuts.length - 1; k++) {
+    const run = simplify(raw.slice(cuts[k], cuts[k + 1] + 1), eps)
+    if (k > 0) run.shift()
+    out.push(...run)
+  }
+  const cornerSet = new Set(corners.map((i) => raw[i]))
+  return out.map((p) => (cornerSet.has(p) ? { ...p, corner: true } : p))
 }
 
 /** Flatten layers at document resolution (for export and bucket fill). */

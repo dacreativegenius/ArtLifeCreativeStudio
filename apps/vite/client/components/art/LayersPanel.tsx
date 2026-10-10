@@ -6,20 +6,47 @@ import { NumInput } from "./NumInput";
 import type { Item, Layer } from "../../lib/art/types";
 import { BRUSHES } from "../../lib/art/types";
 import { DOC_W } from "../../lib/art/types";
-import { renderDoc } from "../../lib/art/render";
+import { drawItem } from "../../lib/art/render";
+import { DOC_H } from "../../lib/art/types";
+import { afterDrawing } from "../../lib/art/activity";
 
+/**
+ * v1.0.4: thumbnails are updated incrementally — a new stroke only draws that stroke onto the
+ * cached thumbnail instead of re-rendering the whole layer (which grew slower with every stroke).
+ */
 function LayerThumb({ layer }: {layer: Layer;}) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const art = useRef<{canvas: HTMLCanvasElement;items: Item[];w: number;h: number;} | null>(null);
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
-    const id = window.setTimeout(() => {
-      const img = renderDoc([{ ...layer, visible: true, opacity: 1 }], 88 / DOC_W, true);
-      c.width = img.width;
-      c.height = img.height;
-      c.getContext("2d")!.drawImage(img, 0, 0);
-    }, 120);
-    return () => window.clearTimeout(id);
+    return afterDrawing(() => {
+      const scale = 88 / DOC_W;
+      const w = Math.max(1, Math.round(DOC_W * scale));
+      const h = Math.max(1, Math.round(DOC_H * scale));
+      let a = art.current;
+      const items = layer.items;
+      const prev = a && a.w === w && a.h === h ? a.items : null;
+      const appended = !!prev && items.length >= prev.length && prev.every((it, i) => items[i] === it);
+      if (!a || !appended) {
+        const canvas = a?.canvas ?? document.createElement("canvas");
+        a = art.current = { canvas, items: [], w, h };
+        canvas.width = w;
+        canvas.height = h;
+      }
+      const g = a.canvas.getContext("2d")!;
+      g.setTransform(scale, 0, 0, scale, 0, 0);
+      for (let i = a.items.length; i < items.length; i++) drawItem(g, items[i]);
+      a.items = items;
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = (layer.blend === "multiply" ? "multiply" : layer.blend === "screen" ? "screen" : "source-over");
+      ctx.drawImage(a.canvas, 0, 0);
+      ctx.globalCompositeOperation = "source-over";
+    }, 400);
   }, [layer]);
   return <canvas ref={ref} aria-hidden="true" className="h-[28px] w-[44px] shrink-0 rounded-sm border border-border bg-foreground" data-oid="7a0a1ae753" data-oid-component-root="true" />;
 }

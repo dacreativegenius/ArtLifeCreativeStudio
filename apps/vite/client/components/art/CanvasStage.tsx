@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Group, Scissors, Trash2, Ungroup } from "lucide-react";
+import { Group, Link2, Scissors, Trash2, Ungroup } from "lucide-react";
+import { setDrawing } from "../../lib/art/activity";
 import { outlineItem } from "../../lib/art/pathfinder";
 import type { Studio, View } from "./useStudio";
 import {
@@ -19,6 +20,7 @@ import {
 import {
   anchorsOf,
   drawItem,
+  drawPencil,
   eraseFromPath,
   floodMask,
   strokeToBlob,
@@ -35,6 +37,7 @@ import {
   scaleItem,
   setAnchor,
   simplify,
+  simplifyKeepCorners,
   splitPath,
   traceMask,
   translateItem,
@@ -55,6 +58,11 @@ import {
   modelOutlines,
   modelSubpaths,
   modelToggle,
+  asJoinablePath,
+  joinEnds,
+  openEnds,
+  reverseSub,
+  type PathEnd,
   type EditModel } from
 "../../lib/art/pathEdit";
 
@@ -74,10 +82,12 @@ type Drag =
 {type: "convert";id: string;sub: number;idx: number;model: EditModel;sx0: number;sy0: number;moved: boolean;} |
 {type: "sample";} |
 {type: "corner";id: string;sub: number;idx: number;orig: PathItem;moved: boolean;r: number;} |
-{type: "pen";} |
+{type: "pen";mode: "new" | "out";moved: boolean;hadOut: boolean;} |
 {type: "rotate";cx: number;cy: number;a0: number;angle: number;box: Rect;orig: Map<string, Item>;moved: boolean;};
 
-type Pen = {item: PathItem;layerId: string;closing: boolean;};
+/** origId: continuing an existing open path (replaced on commit). absorb: open paths joined into this one. */
+type Pen = {item: PathItem;layerId: string;closing: boolean;origId?: string;absorb: string[];};
+type OpenEnd = PathEnd & {x: number;y: number;layerId: string;};
 type Gesture = {m0x: number;m0y: number;d0: number;a0: number;v0: View;};
 
 const ROT_OFFSET = 28;
@@ -170,6 +180,17 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const live = useRef<Item | null>(null);
   const liveLayer = useRef<string>("");
   const pen = useRef<Pen | null>(null);
+  const penEndHover = useRef<OpenEnd | null>(null);
+  const liveCache = useRef<{canvas: HTMLCanvasElement;id: string;key: string;frozen: number;} | null>(null);
+  const rawLast = useRef<Pt | null>(null);
+  const endsCache = useRef<{layers: Layer[];list: OpenEnd[];} | null>(null);
+  const [ends, setEndsState] = useState<PathEnd[]>([]);
+  const endsRef = useRef<PathEnd[]>([]);
+  const setEnds = (v: PathEnd[]) => {
+    endsRef.current = v;
+    setEndsState(v);
+    dirty.current = true;
+  };
   const penHover = useRef<XY | null>(null);
   const drag = useRef<Drag | null>(null);
   const touches = useRef(new Map<number, XY>());
@@ -260,17 +281,37 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const p = pen.current;
     pen.current = null;
     penHover.current = null;
+    penEndHover.current = null;
     dirty.current = true;
     if (!p || p.item.subpaths[0].nodes.length < 2) return;
-    if (!p.item.subpaths[0].closed) p.item.fill = null;
-    const item = p.item;
-    S.current.commit((ls) => ls.map((l) => l.id === p.layerId ? { ...l, items: [...l.items, item] } : l));
+    if (!p.origId && !p.item.subpaths[0].closed) p.item.fill = null;
+    const item: PathItem = { ...p.item, subpaths: p.item.subpaths.map((sp) => ({ closed: sp.closed, nodes: sp.nodes.map((n) => ({ ...n })) })) };
+    const gone = new Set(p.absorb);
+    S.current.commit((ls) =>
+    ls.map((l) => {
+      if (l.id !== p.layerId && !l.items.some((i) => gone.has(i.id) || i.id === p.origId)) return l;
+      let items = l.items.filter((i) => !gone.has(i.id));
+      if (p.origId && items.some((i) => i.id === p.origId)) items = items.map((i) => i.id === p.origId ? item : i);else
+      if (l.id === p.layerId) items = [...items, item];
+      return { ...l, items };
+    })
+    );
   };
 
   useEffect(() => {
     if (studio.tool !== "pen" && pen.current) commitPen();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studio.tool]);
+
+  // picked end anchors only live while Direct Selection is active and their paths stay selected
+  useEffect(() => {
+    const cur = endsRef.current;
+    if (!cur.length) return;
+    const sel = new Set(studio.selection);
+    const next = studio.tool === "direct" ? cur.filter((pe) => sel.has(pe.id)) : [];
+    if (next.length !== cur.length) setEnds(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studio.selection, studio.tool]);
 
   /* ---------- sizing ---------- */
   useEffect(() => {
@@ -327,6 +368,11 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           space.current = true;
           setSpaceDown(true);
         }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        joinRef.current();
         return;
       }
       if (pen.current) {
@@ -429,6 +475,11 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       l.clip();
     };
 
+    // pen continuing / joining existing paths: those originals are hidden while the pen edits them
+    const pn0 = pen.current;
+    const skipIds = pn0 ? [pn0.origId, ...pn0.absorb].filter((v): v is string => !!v) : [];
+    const skipKey = skipIds.join(",");
+
     // layers — committed artwork comes from each layer's cache; only the live stroke is redrawn per frame
     for (const layer of st.layers) {
       if (!layer.visible) continue;
@@ -443,13 +494,22 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         lc.height = c.height;
         cache.key = "";
       }
-      if (cache.items !== layer.items || cache.key !== viewKey) {
+      const ckey = skipKey ? `${viewKey}#${skipKey}` : viewKey;
+      if (cache.items !== layer.items || cache.key !== ckey) {
         const l = lc.getContext("2d")!;
-        prep(l, true);
-        for (const it of layer.items) if (!it.hidden && rectsIntersect(boundsOf(it), vis)) drawItem(l, it);
+        const prev = cache.items;
+        const items = layer.items;
+        // v1.0.4: a finished stroke only draws itself onto the cached layer — no full re-render,
+        // so committing stays instant no matter how many strokes the drawing already has
+        const appended = cache.key === ckey && !!prev && items.length > prev.length && prev.every((it, i) => items[i] === it);
+        prep(l, !appended);
+        for (let i = appended && prev ? prev.length : 0; i < items.length; i++) {
+          const it = items[i];
+          if (!it.hidden && !(skipKey && skipIds.includes(it.id)) && rectsIntersect(boundsOf(it), vis)) drawItem(l, it);
+        }
         l.restore();
-        cache.items = layer.items;
-        cache.key = viewKey;
+        cache.items = items;
+        cache.key = ckey;
       }
       let out = lc;
       const liveHere = live.current && layer.id === liveLayer.current ? live.current : null;
@@ -470,7 +530,36 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           // stroke prediction: draw slightly ahead of the pen so the line keeps up with the nib
           const pr = predicted.current;
           const withPred = pr.length && (liveHere.kind === "stroke" || liveHere.kind === "erase") ? { ...liveHere, points: [...liveHere.points, ...pr] } as Item : liveHere;
-          drawItem(s2, withPred);
+          if (liveHere.kind === "stroke" && !isVectorBrush(liveHere.brush) && withPred.kind === "stroke") {
+            // v1.0.4: incremental pencil — settled grain is stamped once into a cache and only the
+            // tip is redrawn, so long strokes cost the same per frame as short ones
+            let lv = liveCache.current;
+            if (!lv) lv = liveCache.current = { canvas: document.createElement("canvas"), id: "", key: "", frozen: 0 };
+            if (lv.canvas.width !== c.width || lv.canvas.height !== c.height) {
+              lv.canvas.width = c.width;
+              lv.canvas.height = c.height;
+              lv.id = "";
+            }
+            const g = lv.canvas.getContext("2d")!;
+            if (lv.id !== liveHere.id || lv.key !== viewKey) {
+              g.setTransform(1, 0, 0, 1, 0, 0);
+              g.clearRect(0, 0, lv.canvas.width, lv.canvas.height);
+              lv.id = liveHere.id;
+              lv.key = viewKey;
+              lv.frozen = 0;
+            }
+            prep(g, false);
+            const stable = drawPencil(g, liveHere, { from: lv.frozen, to: "stable", core: false });
+            g.restore();
+            if (stable > lv.frozen) lv.frozen = stable;
+            s2.save();
+            s2.setTransform(1, 0, 0, 1, 0, 0);
+            s2.drawImage(lv.canvas, 0, 0);
+            s2.restore();
+            s2.save();
+            drawPencil(s2, withPred, { from: lv.frozen });
+            s2.restore();
+          } else drawItem(s2, withPred);
         }
         if (penHere) drawItem(s2, penHere);
         s2.restore();
@@ -805,6 +894,42 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       }
     }
 
+    // v1.0.4 Join: picked end anchors (orange) and the other open ends you can tap (rings)
+    const picks = endsRef.current;
+    if (picks.length && st.tool === "direct") {
+      if (picks.length === 1) {
+        ctx.strokeStyle = acc;
+        for (const oe of allOpenEnds()) {
+          if (sameEnd(oe, picks[0])) continue;
+          ctx.beginPath();
+          ctx.arc(X(oe.x), Y(oe.y), 5, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+      for (const pe of picks) {
+        const q = endPoint(pe);
+        if (!q) continue;
+        ctx.fillStyle = colors.current.primary;
+        ctx.fillRect(X(q.x) - 5, Y(q.y) - 5, 10, 10);
+        ctx.strokeStyle = "#ffffff";
+        ctx.strokeRect(X(q.x) - 5, Y(q.y) - 5, 10, 10);
+      }
+    }
+    // pen hovering an open end: click to continue (or join) that path
+    const peh = penEndHover.current;
+    if (peh && st.tool === "pen" && !drag.current) {
+      ctx.strokeStyle = acc;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(X(peh.x), Y(peh.y), 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = acc;
+      ctx.fillRect(X(peh.x) - 3, Y(peh.y) - 3, 6, 6);
+      ctx.lineWidth = 1;
+    }
+
     const d = drag.current;
     if (d?.type === "marquee") {
       const x = Math.min(d.x0, d.x1);
@@ -908,7 +1033,10 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const { sx, sy, x, y } = locate(ev.clientX, ev.clientY);
     const p = it.kind === "stroke" ? pressureFor(ev, sx, sy) : 1;
     const last = it.points[it.points.length - 1];
-    const k = 1 - S.current.stabilizer * 0.85;
+    rawLast.current = { x, y, p };
+    // v1.0.4: Mono Liner follows the pen closely — light smoothing only, so drawn corners stay corners
+    const sb = it.kind === "stroke" && it.brush === "vector-fixed" ? S.current.stabilizer * 0.3 : S.current.stabilizer;
+    const k = 1 - sb * 0.85;
     const nx = last.x + (x - last.x) * k;
     const ny = last.y + (y - last.y) * k;
     if (Math.hypot(nx - last.x, ny - last.y) < 0.35 / S.current.view.zoom) return;
@@ -1068,6 +1196,141 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     return null;
   };
 
+  /* ---------- v1.0.4: open-path ends (pen continue + Join) ---------- */
+  const findItem = (id: string) => {
+    for (const l of S.current.layers) {
+      const item = l.items.find((i) => i.id === id);
+      if (item) return { item, layerId: l.id };
+    }
+    return null;
+  };
+
+  /** Open-path end anchors on visible, unlocked vector layers (cached per document state). */
+  const allOpenEnds = (): OpenEnd[] => {
+    const ls = S.current.layers;
+    const cached = endsCache.current;
+    if (cached && cached.layers === ls) return cached.list;
+    const list: OpenEnd[] = [];
+    for (const l of ls) {
+      if (!l.visible || l.locked || l.type !== "vector") continue;
+      for (const it of l.items) {
+        const p = asJoinablePath(it);
+        if (p) for (const oe of openEnds(p)) list.push({ ...oe, layerId: l.id });
+      }
+    }
+    endsCache.current = { layers: ls, list };
+    return list;
+  };
+
+  const openEndAt = (sx: number, sy: number, skip: Set<string> | null) => {
+    let best: OpenEnd | null = null;
+    let bd = 10;
+    for (const oe of allOpenEnds()) {
+      if (skip?.has(oe.id)) continue;
+      const p = toScreen(oe.x, oe.y);
+      const dd = Math.hypot(p.x - sx, p.y - sy);
+      if (dd < bd) {
+        bd = dd;
+        best = oe;
+      }
+    }
+    return best;
+  };
+
+  const endPoint = (pe: PathEnd) => {
+    const f = findItem(pe.id);
+    const p = f ? asJoinablePath(f.item) : null;
+    const sp = p?.subpaths[pe.sub];
+    if (!sp || sp.closed || !sp.nodes.length) return null;
+    return pe.end === 0 ? sp.nodes[0] : sp.nodes[sp.nodes.length - 1];
+  };
+
+  const sameEnd = (a: PathEnd, b: PathEnd) => a.id === b.id && a.sub === b.sub && a.end === b.end;
+
+  const pickEnd = (pe: PathEnd) => {
+    const cur = endsRef.current;
+    const next = cur.some((c) => sameEnd(c, pe)) ? cur.filter((c) => !sameEnd(c, pe)) : [...cur, pe].slice(-2);
+    setEnds(next);
+    const st = S.current;
+    if (!st.selection.includes(pe.id)) st.setSelection([...st.selection, pe.id]);
+    st.flash(next.length === 2 ? "2 end anchors picked · tap Join (Ctrl J)" : next.length === 1 ? "End anchor picked · tap a second end anchor, then Join" : "End anchor un-picked");
+  };
+
+  /** Map a flat anchor index (anchorsOf) to an open end, if it is one. */
+  const flatToEnd = (it: Item, flat: number): PathEnd | null => {
+    const p = asJoinablePath(it);
+    if (!p) return null;
+    let k = flat;
+    for (let s = 0; s < p.subpaths.length; s++) {
+      const sp = p.subpaths[s];
+      const n = sp.nodes.length;
+      if (k < n) return sp.closed ? null : k === 0 ? { id: it.id, sub: s, end: 0 } : k === n - 1 ? { id: it.id, sub: s, end: 1 } : null;
+      k -= n;
+    }
+    return null;
+  };
+
+  /** What Join acts on: the two picked end anchors, else the selection (1 open path closes, 2 paths meet at their nearest ends). */
+  const joinPair = (): [PathEnd, PathEnd] | null => {
+    const picks = endsRef.current;
+    if (picks.length === 2) return [picks[0], picks[1]];
+    const st = S.current;
+    if (!st.selection.length || st.selection.length > 2) return null;
+    const sel = new Set(st.selection);
+    const paths: PathItem[] = [];
+    for (const l of st.layers) for (const it of l.items) {
+      if (!sel.has(it.id) || it.kind === "erase") continue;
+      const p = asJoinablePath(it);
+      if (!p) return null;
+      paths.push(p);
+    }
+    if (paths.length === 1) {
+      const s = paths[0].subpaths.findIndex((sp) => !sp.closed && sp.nodes.length >= 3);
+      return s >= 0 ? [{ id: paths[0].id, sub: s, end: 0 }, { id: paths[0].id, sub: s, end: 1 }] : null;
+    }
+    if (paths.length === 2) {
+      let best: [PathEnd, PathEnd] | null = null;
+      let bd = Infinity;
+      for (const a of openEnds(paths[0])) for (const b of openEnds(paths[1])) {
+        const dd = Math.hypot(a.x - b.x, a.y - b.y);
+        if (dd < bd) {
+          bd = dd;
+          best = [{ id: a.id, sub: a.sub, end: a.end }, { id: b.id, sub: b.sub, end: b.end }];
+        }
+      }
+      return best;
+    }
+    return null;
+  };
+
+  const joinSelection = () => {
+    const st = S.current;
+    const pair = joinPair();
+    if (!pair) return st.flash("Join: tap two end anchors with Direct Selection (A), or select 1–2 open paths");
+    const [a, b] = pair;
+    const fa = findItem(a.id);
+    const fb = findItem(b.id);
+    if (!fa || !fb) return setEnds([]);
+    if (!editableId(fa.layerId) || !editableId(fb.layerId)) return;
+    const pa = asJoinablePath(fa.item);
+    const pb = a.id === b.id ? pa : asJoinablePath(fb.item);
+    if (!pa || !pb) return st.flash("Those anchors can't be joined");
+    const res = joinEnds(pa, a, pb, b);
+    if (!res) return st.flash("Pick two different open end anchors");
+    st.commit((ls) =>
+    ls.map((l) =>
+    l.items.some((i) => i.id === pa.id || i.id === res.removeId) ?
+    { ...l, items: l.items.filter((i) => i.id !== res.removeId).map((i) => i.id === pa.id ? res.item : i) } :
+    l
+    )
+    );
+    setEnds([]);
+    st.setSelection([res.item.id]);
+    st.flash(res.removeId ? "Joined into one path" : a.id === b.id && a.sub === b.sub ? "Path closed" : "Joined");
+  };
+  const joinRef = useRef(joinSelection);
+  joinRef.current = joinSelection;
+
   const replaceWith = (id: string, next: Item | null) => {
     const st = S.current;
     st.commit((ls) =>
@@ -1137,8 +1400,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
 
   const startGesture = () => {
     // a second finger cancels whatever the first finger started
+    setDrawing(false);
     if (drag.current?.type === "draw" || drag.current?.type === "shape") live.current = null;
-    if (drag.current?.type === "pen" && pen.current) {
+    if (drag.current?.type === "pen" && drag.current.mode === "new" && pen.current) {
       const nodes = penNodes();
       if (!pen.current.closing) nodes.pop();
       pen.current.closing = false;
@@ -1248,6 +1512,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             points: [{ x, y, p }],
             seed: Math.floor(Math.random() * 1e9)
           };
+          rawLast.current = { x, y, p };
+          setDrawing(true);
           drag.current = { type: "draw" };
           break;
         }
@@ -1256,6 +1522,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           if (!layerId) return;
           liveLayer.current = layerId;
           live.current = { id: uid("e"), kind: "erase", size: st.eraserSize, points: [{ x, y, p: 1 }] };
+          setDrawing(true);
           drag.current = { type: "draw" };
           break;
         }
@@ -1281,11 +1548,27 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       case "pen":{
           const pn = pen.current;
           if (!pn) {
+            // v1.0.4: starting on the end of an open path keeps drawing that same path
+            const oe = openEndAt(sx, sy, null);
+            const src = oe ? findItem(oe.id) : null;
+            const sp0 = src ? asJoinablePath(src.item) : null;
+            if (oe && src && sp0 && editableId(src.layerId)) {
+              const run = oe.end === 0 ? reverseSub(sp0.subpaths[oe.sub]) : sp0.subpaths[oe.sub];
+              const subpaths = [{ closed: false, nodes: run.nodes.map((n) => ({ ...n })) }, ...sp0.subpaths.filter((_, i) => i !== oe.sub)];
+              pen.current = { layerId: src.layerId, closing: false, origId: sp0.id, absorb: [], item: { ...sp0, subpaths } };
+              penEndHover.current = null;
+              st.setSelection([]);
+              st.setActiveLayerId(src.layerId);
+              st.flash("Continuing the path · click to add anchors · Enter finishes");
+              drag.current = { type: "pen", mode: "out", moved: false, hadOut: true };
+              break;
+            }
             const layerId = target("vector");
             if (!layerId) return;
             pen.current = {
               layerId,
               closing: false,
+              absorb: [],
               item: {
                 id: uid("p"),
                 kind: "path",
@@ -1297,19 +1580,49 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
               }
             };
             if (!pen.current.item.stroke && !pen.current.item.fill) pen.current.item.stroke = st.primary, pen.current.item.size = 1;
-          } else {
-            const nodes = pn.item.subpaths[0].nodes;
-            const first = nodes[0];
-            const last = nodes[nodes.length - 1];
-            if (nodes.length >= 2 && near(first.x, first.y, sx, sy, 9)) {
-              pn.item.subpaths[0].closed = true;
-              pn.closing = true;
-            } else if (nodes.length >= 2 && near(last.x, last.y, sx, sy, 9)) {
-              commitPen();
-              break;
-            } else nodes.push(cornerNode(snapPt(x, y).x, snapPt(x, y).y));
+            drag.current = { type: "pen", mode: "new", moved: false, hadOut: false };
+            break;
           }
-          drag.current = { type: "pen" };
+          const nodes = pn.item.subpaths[0].nodes;
+          const first = nodes[0];
+          const last = nodes[nodes.length - 1];
+          if (nodes.length >= 2 && near(first.x, first.y, sx, sy, 9)) {
+            pn.item.subpaths[0].closed = true;
+            pn.closing = true;
+            drag.current = { type: "pen", mode: "new", moved: false, hadOut: false };
+            break;
+          }
+          if (near(last.x, last.y, sx, sy, 9)) {
+            // v1.0.4: clicking the last anchor cuts its outgoing handle (the incoming curve stays) and the
+            // path keeps going; dragging from it pulls a new one-sided handle. Click a corner end to finish.
+            const hadOut = last.ox !== last.x || last.oy !== last.y;
+            last.ox = last.x;
+            last.oy = last.y;
+            if (hadOut) st.flash("Handle cut · keep clicking to continue the path · drag the anchor for a new handle");
+            drag.current = { type: "pen", mode: "out", moved: false, hadOut };
+            break;
+          }
+          // v1.0.4: clicking the end of another open path joins it onto this one
+          const oe = openEndAt(sx, sy, new Set([pn.item.id, ...pn.absorb]));
+          const src = oe ? findItem(oe.id) : null;
+          const other = src ? asJoinablePath(src.item) : null;
+          if (oe && src && other && editableId(src.layerId)) {
+            const run = oe.end === 1 ? reverseSub(other.subpaths[oe.sub]) : other.subpaths[oe.sub];
+            const add = run.nodes.map((n) => ({ ...n }));
+            if (Math.hypot(add[0].x - last.x, add[0].y - last.y) < 0.75) {
+              last.ox = add[0].ox;
+              last.oy = add[0].oy;
+              add.shift();
+            }
+            nodes.push(...add);
+            pn.item.subpaths.push(...other.subpaths.filter((_, i) => i !== oe.sub));
+            pn.absorb.push(other.id);
+            penEndHover.current = null;
+            st.flash("Joined to that path · keep drawing or press Enter");
+            break;
+          }
+          nodes.push(cornerNode(snapPt(x, y).x, snapPt(x, y).y));
+          drag.current = { type: "pen", mode: "new", moved: false, hadOut: false };
           break;
         }
       case "penAdd":
@@ -1417,6 +1730,14 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             drag.current = { type: "corner", ...ch, moved: false, r: 0 };
             break;
           }
+          // v1.0.4 Join: with one end anchor picked, the open end of any other path can be tapped next
+          if (endsRef.current.length === 1) {
+            const oe = openEndAt(sx, sy, null);
+            if (oe && !st.selection.includes(oe.id)) {
+              pickEnd({ id: oe.id, sub: oe.sub, end: oe.end });
+              break;
+            }
+          }
           const a = anchorHit(sx, sy);
           if (a) {
             drag.current = { type: "anchor", ...a, moved: false };
@@ -1489,6 +1810,19 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             const pn = pen.current;
             if (!pn) break;
             const nodes = pn.item.subpaths[0].nodes;
+            if (d.mode === "out") {
+              // one-sided handle: only the outgoing side follows the pen
+              const n = nodes[nodes.length - 1];
+              if (near(n.x, n.y, sx, sy, 3)) {
+                n.ox = n.x;
+                n.oy = n.y;
+              } else {
+                n.ox = x;
+                n.oy = y;
+                d.moved = true;
+              }
+              break;
+            }
             const n = pn.closing ? nodes[0] : nodes[nodes.length - 1];
             if (near(n.x, n.y, sx, sy, 2)) {
               n.ox = n.x;
@@ -1654,6 +1988,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           }
         case "anchor":{
             if (!d.moved) {
+              // finger / nib jitter on a tap shouldn't count as a drag (a tap picks the end for Join)
+              const a0 = anchorsOf(d.orig)[d.idx];
+              if (a0 && near(a0.x, a0.y, sx, sy, 7)) break;
               st.snapshot();
               d.moved = true;
             }
@@ -1706,6 +2043,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     } else if (st.tool === "direct") {
       const a = anchorHit(sx, sy);
       hoverAnchor.current = a ? { id: a.id, idx: a.idx } : null;
+    } else if (st.tool === "pen") {
+      const pn = pen.current;
+      penEndHover.current = openEndAt(sx, sy, pn ? new Set([pn.item.id, ...pn.absorb]) : null);
     } else if (EDIT_TOOLS.has(st.tool)) {
       updateHoverEdit(sx, sy, x, y);
     }
@@ -1773,12 +2113,14 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     drag.current = null;
     guides.current = null;
     predicted.current = [];
+    setDrawing(false);
     setPanning(false);
     const st = S.current;
     dirty.current = true;
     if (!d) return;
     if (d.type === "pen") {
-      if (pen.current?.closing) commitPen();
+      if (pen.current?.closing) commitPen();else
+      if (d.mode === "out" && !d.moved && !d.hadOut && penNodes().length >= 2) commitPen();
       return;
     }
     if (d.type === "convert") {
@@ -1794,7 +2136,13 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       live.current = null;
       if (!it) return;
       // fewer anchors: Mono Liner gets a looser fit, Pressure Ink is slimmed again when it becomes a blob
-      if (it.kind === "stroke" && isVectorBrush(it.brush)) it.points = simplify(it.points, it.brush === "vector-fixed" ? 1.4 : 0.9);
+      if (it.kind === "stroke" && it.brush === "vector-fixed") {
+        // v1.0.4 Mono Liner: end exactly where the pen lifted and keep the corners you drew
+        const rl = rawLast.current;
+        const lp = it.points[it.points.length - 1];
+        if (rl && Math.hypot(rl.x - lp.x, rl.y - lp.y) > 0.2 / st.view.zoom) it.points.push({ x: rl.x, y: rl.y, p: lp.p });
+        it.points = simplifyKeepCorners(it.points, 1.2, 7 / st.view.zoom);
+      } else if (it.kind === "stroke" && isVectorBrush(it.brush)) it.points = simplify(it.points, 0.9);
       if (it.kind === "shape") {
         const b = itemBounds(it);
         if (b.w - it.size < 2 && b.h - it.size < 2) return;
@@ -1882,7 +2230,14 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       const ids = selectable((it) => outlineOf(it).pts.some((p) => pointInPoly(p.x, p.y, d.pts)));
       st.setSelection(expandGroups(d.additive ? [...d.base, ...ids] : ids));
     }
-    if (d.type === "anchor") hoverAnchor.current = null;
+    if (d.type === "anchor") {
+      hoverAnchor.current = null;
+      // a tap (no drag) on an open end anchor picks it for Join
+      if (!d.moved) {
+        const pe = flatToEnd(d.orig, d.idx);
+        if (pe) pickEnd(pe);
+      }
+    }
   };
 
   const tool = studio.tool;
@@ -1916,6 +2271,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       if (sketch) selectionCount++;
     }
   }
+  const canJoin = studio.selection.length > 0 && joinPair() !== null;
   let rotDeg = Math.round(studio.view.rot * 180 / Math.PI) % 360;
   if (rotDeg > 180) rotDeg -= 360;
   if (rotDeg <= -180) rotDeg += 360;
@@ -1924,7 +2280,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     <section className="relative flex min-w-0 flex-1 flex-col" data-oid="b1527df8cb" data-oid-component-root="true">
       <div
         ref={wrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:68882ff55de0">
+        className="relative min-h-0 flex-1 overflow-hidden bg-background bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] bg-[length:22px_22px]" data-oid="52895534ae" data-oid-text-editable="false" data-oid-text-source="element:canvas|expression:2d3ea7d0df4e|expression:11c8dcc958f2">
         
         <canvas
           ref={canvasRef}
@@ -1966,6 +2322,10 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             </button>
             <button type="button" disabled={!studio.selectionGrouped} onClick={studio.ungroupSelection} className="inline-flex h-9 shrink-0 items-center gap-ds-xs rounded-md px-ds-md text-label text-foreground hover:bg-secondary disabled:opacity-35" data-oid="628ed51504">
               <Ungroup className="h-4 w-4" data-oid="6ea5ef98b0" /> Ungroup
+            </button>
+            <button type="button" disabled={!canJoin} onClick={joinSelection} title="Join end anchors · Ctrl J" className="inline-flex h-9 shrink-0 items-center gap-ds-xs rounded-md px-ds-md text-label text-foreground hover:bg-secondary disabled:opacity-35" data-oid="c6cdd64984" data-oid-text-editable="false">
+              <Link2 className="h-4 w-4" data-oid="b8e627ce72" /> Join
+              {ends.length > 0 && <output className="type-caption text-primary" data-oid="b378d4f450" data-oid-text-editable="false" data-oid-text-source="expression:a3337e79f202|text">{ends.length}/2</output>}
             </button>
             <button type="button" onClick={studio.deleteSelection} className="inline-flex h-9 items-center gap-ds-xs rounded-md bg-destructive px-ds-md text-label font-semibold text-destructive-foreground hover:opacity-90" data-oid="28c3865609">
               <Trash2 className="h-4 w-4" data-oid="16d8e1c405" /> Delete
