@@ -301,7 +301,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
             data-dragging={draggingId === layer.id}
             onClick={() => studio.setActiveLayerId(layer.id)}
             style={{ marginLeft: layerDepth(studio.layers, layer) * 14 }}
-            className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50 data-[dragging=true]:opacity-40 data-[drop=above]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=below]:shadow-[inset_0_-2px_0_0_var(--primary)] data-[drop=inside]:border-primary data-[drop=inside]:bg-primary/15" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="element:button|expression:64e6e506d3c6|expression:365984e73157|element:button|element:button|element:div|element:button" data-oid-style-dynamic="marginLeft">
+            className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50 data-[dragging=true]:opacity-40 data-[drop=above]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=below]:shadow-[inset_0_-2px_0_0_var(--primary)] data-[drop=inside]:border-primary data-[drop=inside]:bg-primary/15" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="element:button|expression:64e6e506d3c6|expression:cf09e9d1d260|element:button|element:button|element:div|element:button" data-oid-style-dynamic="marginLeft">
           
             <button
               type="button"

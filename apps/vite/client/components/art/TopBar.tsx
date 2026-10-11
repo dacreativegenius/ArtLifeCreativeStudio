@@ -3,6 +3,7 @@ import { ChevronDown, Crosshair, Grid3x3, Magnet, Download, FileImage, FilePlus2
 import { isNativeApp } from "../../lib/art/native";
 import { isIOS, isStandalone } from "../../lib/art/pwa";
 import { InstallApp } from "./InstallApp";
+import { GuideButton } from "./GuideDialog";
 import type { Studio } from "./useStudio";
 import { desktop } from "../../lib/art/desktop";
 import { ArtLifeLogo } from "./ArtLifeLogo";
@@ -267,6 +268,7 @@ export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: 
       </div>
 
       <div className="ml-auto flex items-center gap-ds-xs md:ml-0" data-oid="20df5d0044">
+        <GuideButton />
         <InstallApp />
         <div className="flex items-center gap-[2px] border-r border-border pr-ds-xs" data-oid="856c878a14">
           <button type="button" aria-label="Show grid (Ctrl+')" title="Show grid · Ctrl '" aria-pressed={studio.showGrid} onClick={() => studio.setShowGrid(!studio.showGrid)} className="inline-flex h-7 items-center rounded-md px-ds-sm text-muted-foreground hover:bg-secondary hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-accent" data-oid="50bf2b8a89">
