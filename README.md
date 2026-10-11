@@ -1,5 +1,5 @@
 # Art Life Creative Studio
-A cross-platform drawing and illustration app built for touch screens and stylus. It runs on the web, Windows (portable .exe) and Android (.apk).
+A cross-platform drawing and illustration app built for touch screens and stylus. It runs on the web, Windows (portable .exe) and Android (.apk) and HTML. 
 
 ## Features
 - Pencil, Pressure Ink, Mono Line vector brush, vector eraser
@@ -9,6 +9,7 @@ A cross-platform drawing and illustration app built for touch screens and stylus
 - Stylus support for Wacom, Surface Pen, S Pen and Apple Pencil
 - .dtm project files that work on every platform, plus PNG and SVG export
 - Built-in Guide (top bar) that you can save as a PDF
+- This is a work in progress, free for all creatives who want an app to quickly hop on a drawing app. 
 
 ## Run the web version
 
