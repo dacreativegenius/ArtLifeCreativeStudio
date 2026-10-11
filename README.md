@@ -11,13 +11,3 @@ A cross-platform drawing and illustration app built for touch screens and stylus
 - Built-in Guide (top bar) that you can save as a PDF
 
 ## Run the web version
-pnpm install pnpm --filter @vibe/app-vite dev
-
-## Build the Windows .exe
-cd apps/vite/electron npm install npm run portable
-
-## Build the Android APK
-cd apps/vite/android-app pnpm install pnpm run apk
-
-## License
-MIT
