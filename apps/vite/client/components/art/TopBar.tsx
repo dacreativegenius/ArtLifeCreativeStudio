@@ -1,0 +1,305 @@
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Crosshair, Grid3x3, Magnet, Download, FileImage, FilePlus2, FolderOpen, Maximize, Minus, PanelRight, Plus, Redo2, Save, Shapes, Trash2, Undo2 } from "lucide-react";
+import { isNativeApp } from "../../lib/art/native";
+import { isIOS, isStandalone } from "../../lib/art/pwa";
+import { InstallApp } from "./InstallApp";
+import { GuideButton } from "./GuideDialog";
+import type { Studio } from "./useStudio";
+import { desktop } from "../../lib/art/desktop";
+import { ArtLifeLogo } from "./ArtLifeLogo";
+import { NumInput } from "./NumInput";
+
+const barBtn =
+"inline-flex h-7 items-center gap-ds-xs rounded-md px-ds-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-35";
+
+function Range({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  suffix = "",
+  onChange,
+  onPointerDown,
+  onType
+}: {label: string;value: number;min: number;max: number;step?: number;suffix?: string;onChange: (v: number) => void;onPointerDown?: () => void;onType?: (v: number) => void;}) {
+  return (
+    <div className="flex items-center gap-ds-sm text-label text-muted-foreground" data-oid="6213878dcc" data-oid-component-root="true">
+      <span data-oid="db5ea76be2">{label}</span>
+      <input
+        type="range"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onPointerDown={onPointerDown}
+        className="h-1 w-28 cursor-pointer accent-primary" data-oid="0e4ba497ec" />
+      
+      <NumInput label={label} value={value} min={min} max={max} suffix={suffix} onChange={onType ?? onChange} />
+    </div>);
+
+}
+
+function ToolOptions({ studio }: {studio: Studio;}) {
+  const t = studio.tool;
+  if (t === "brush") {
+    return (
+      <div className="flex items-center gap-ds-lg" data-oid="8d7add58d4" data-oid-component-root="true">
+        <Range label="Size" value={studio.currentBrush.size} min={1} max={120} suffix="px" onChange={(v) => studio.updateBrush({ size: v })} />
+        <Range
+          label="Opacity"
+          value={Math.round(studio.currentBrush.opacity * 100)}
+          min={5}
+          max={100}
+          suffix="%"
+          onChange={(v) => studio.updateBrush({ opacity: v / 100 })} />
+        
+      </div>);
+
+  }
+  if (t === "eraser") {
+    return <Range label="Eraser size" value={studio.eraserSize} min={1} max={200} suffix="px" onChange={studio.setEraserSize} />;
+  }
+  if (t === "line" || t === "rect" || t === "ellipse" || t === "pen") {
+    return (
+      <div className="flex items-center gap-ds-lg" data-oid="537405d26c" data-oid-component-root="true" data-oid-text-editable="false">
+        <Range label="Stroke" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={120} suffix="px" onPointerDown={studio.beginSelectionEdit} onChange={(v) => studio.setStrokeWidth(v, false)} onType={(v) => studio.setStrokeWidth(v, true)} />
+        {t !== "line" &&
+        <label className="flex items-center gap-ds-xs text-label text-muted-foreground" data-oid="ef164641b7">
+            <input type="checkbox" checked={studio.shapeFill} onChange={(e) => studio.setFillEnabled(e.target.checked)} className="accent-primary" data-oid="4e8387f698" />
+            Fill
+          </label>
+        }
+        <p className="type-caption text-muted-foreground" data-oid="4f56fef441">{t === "pen" ? "CLICK CORNER · DRAG CURVE · CLICK LAST ANCHOR CUTS ITS HANDLE · CLICK AN OPEN END TO CONTINUE · ENTER FINISHES" : "SHIFT constrains"}</p>
+      </div>);
+
+  }
+  if (t === "fill") {
+    return (
+      <div className="flex items-center gap-ds-lg" data-oid="44fb5545d4" data-oid-component-root="true">
+        <Range label="Tolerance" value={studio.fillTolerance} min={0} max={255} onChange={studio.setFillTolerance} />
+        <p className="type-caption text-muted-foreground" data-oid="6b20576528">LIVE PAINT · EACH CLICK MAKES A VECTOR SHAPE ON A VECTOR LAYER</p>
+      </div>);
+
+  }
+  if (t === "select" || t === "direct" || t === "move" || t === "lasso" || t === "transform") {
+    return (
+      <div className="flex items-center gap-ds-sm" data-oid="ea401170a0" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="element:p|expression:442a48d8b29d|element:button|element:button|element:button|element:p">
+        <p className="type-caption text-muted-foreground" data-oid="d702681c17">
+          <output className="text-accent" data-oid="f0e5a67eba">{studio.selection.length}</output> SELECTED
+        </p>
+        {studio.selection.length > 0 &&
+        <Range label="Stroke" value={studio.strokeEnabled ? studio.shapeStroke : 0} min={0} max={120} suffix="px" onPointerDown={studio.beginSelectionEdit} onChange={(v) => studio.setStrokeWidth(v, false)} onType={(v) => studio.setStrokeWidth(v, true)} />
+        }
+        <button type="button" className={barBtn} onClick={studio.selectAll} data-oid="b053a94375" data-oid-classname-dynamic="true">
+          Select all
+        </button>
+        <button type="button" className={barBtn} disabled={!studio.selection.length} onClick={() => studio.setSelection([])} data-oid="c65149f025" data-oid-classname-dynamic="true">
+          Deselect
+        </button>
+        <button type="button" className={barBtn} disabled={!studio.selection.length} onClick={studio.deleteSelection} data-oid="4b67f11f1b" data-oid-classname-dynamic="true">
+          <Trash2 className="h-3.5 w-3.5" data-oid="82d232198f" /> Delete
+        </button>
+        <p className="type-caption text-muted-foreground" data-oid="f1f71b57d4">
+          {t === "transform" ? "CORNERS SCALE · TOP HANDLE ROTATES · SHIFT SNAPS 15°" : t === "direct" ? "DRAG ANCHORS TO RESHAPE · TAP 2 END ANCHORS → JOIN (CTRL J)" : t === "select" ? "CORNERS SCALE · TOP HANDLE ROTATES" : t === "move" ? "CORNERS SCALE · TOP HANDLE ROTATES · NO SELECTION MOVES LAYER" : "DRAW A LOOP · SHIFT ADDS"}
+        </p>
+      </div>);
+
+  }
+  return (
+    <p className="type-caption text-muted-foreground" data-oid="d383281115" data-oid-component-root="true">
+      {t === "penAdd" ? "CLICK A PATH OR SHAPE TO ADD AN ANCHOR · CURVE SHAPE IS KEPT" : t === "penDelete" ? "CLICK AN ANCHOR TO REMOVE IT" : t === "penConvert" ? "CLICK ANCHOR: SMOOTH ⇄ CORNER · DRAG ANCHOR: PULL OUT CURVE · DRAG HANDLE: BREAK IT" : t === "eyedropper" ? "CLICK TO SAMPLE · ALT+CLICK WITH BRUSH" : t === "zoom" ? "CLICK ZOOM IN · ALT+CLICK ZOOM OUT" : "DRAG TO PAN · HOLD SPACE ANYWHERE"}
+    </p>);
+
+}
+
+/** v1.0.4: tap the document name to rename it (Enter saves, Esc cancels). */
+function DocName({ studio }: {studio: Studio;}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(studio.docName);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+  const commit = () => {
+    const name = draft.replace(/\.dtm$/i, "").replace(/[\\/:*?"<>|]+/g, "").trim();
+    if (name && name !== studio.docName) {
+      studio.setDocName(name);
+      studio.flash(`Renamed to “${name}”`);
+    }
+    setEditing(false);
+  };
+  if (editing) {
+    return (
+      <label className="flex items-center gap-[2px] border-l border-border pl-ds-md" data-oid="379d2e6e08" data-oid-component-root="true">
+        <span className="sr-only" data-oid="545967e4a4">Document name</span>
+        <input
+          ref={inputRef}
+          value={draft}
+          maxLength={80}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="ds-input h-8 w-[180px] type-caption md:h-7" data-oid="72d6ebb3a4" />
+        <span className="type-caption text-muted-foreground" data-oid="0ddf8ab4ec">.dtm</span>
+      </label>);
+
+  }
+  return (
+    <button
+      type="button"
+      title="Rename document"
+      aria-label={`Rename document ${studio.docName}`}
+      onClick={() => {
+        setDraft(studio.docName);
+        setEditing(true);
+      }}
+      className="flex h-8 min-w-0 max-w-[140px] items-center rounded-md border-l border-border px-ds-sm type-caption text-foreground hover:bg-secondary md:h-7 md:max-w-[180px]" data-oid="ea80395b7f" data-oid-component-root="true">
+      <span className="truncate" data-oid="782bc31915">{studio.docName}</span>
+      <span className="text-muted-foreground" data-oid="7346db8f88">.dtm</span>
+    </button>);
+
+}
+
+function SaveExportMenu({ studio }: {studio: Studio;}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", esc);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  const run = (fn: () => void) => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <div ref={ref} className="ds-menu" data-oid="3b1957eb9f" data-oid-component-root="true" data-oid-text-editable="false" data-oid-text-source="element:button|expression:739861493a7f">
+      <button type="button" aria-label="Save / Export" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="inline-flex h-7 items-center gap-ds-xs rounded-md px-ds-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-expanded:bg-secondary aria-expanded:text-foreground" data-oid="2315e790c4">
+        <Download className="h-3.5 w-3.5" data-oid="6413f089d1" /> <span className="hidden md:inline" data-oid="33b758e20f">Save / Export</span> <ChevronDown className="h-3 w-3" data-oid="8d5267fcda" />
+      </button>
+      {open &&
+      <div role="menu" className="ds-menu-popover w-[248px]" data-oid="976696f68f">
+          <p className="px-ds-sm pt-ds-xs type-caption text-muted-foreground" data-oid="e36e90f721">SAVE</p>
+          <button type="button" role="menuitem" className="ds-menu-item flex items-center gap-ds-sm" onClick={() => run(studio.saveDTM)} data-oid="7fc7ec1a17">
+            <Save className="h-3.5 w-3.5" data-oid="50b43c213a" />
+            <span className="flex-1" data-oid="b2938a6ab1">Save project (.dtm)</span>
+            <kbd className="type-caption opacity-70" data-oid="da7027e7fe">Ctrl S</kbd>
+          </button>
+          <div className="my-[2px] h-px bg-border" data-oid="9f39e4485f" />
+          <p className="px-ds-sm pt-ds-xs type-caption text-muted-foreground" data-oid="7c3e81cfd8">EXPORT</p>
+          <button type="button" role="menuitem" className="ds-menu-item flex items-center gap-ds-sm" onClick={() => run(studio.exportPNG)} data-oid="098842f88a">
+            <FileImage className="h-3.5 w-3.5" data-oid="72658d356a" />
+            <span className="flex-1" data-oid="2abe30d56b">Export PNG</span>
+            <kbd className="type-caption opacity-70" data-oid="52327e011c">RASTER</kbd>
+          </button>
+          <button type="button" role="menuitem" className="ds-menu-item flex items-center gap-ds-sm" onClick={() => run(studio.exportSVG)} data-oid="d7769140d7">
+            <Shapes className="h-3.5 w-3.5" data-oid="8db0b1dedc" />
+            <span className="flex-1" data-oid="7be764d659">Export SVG</span>
+            <kbd className="type-caption opacity-70" data-oid="755e0e8932">Ctrl ⇧ S</kbd>
+          </button>
+        </div>
+      }
+    </div>);
+
+}
+
+export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: Studio;panelsOpen?: boolean;onTogglePanels?: () => void;}) {
+  return (
+    <header className="relative z-30 flex min-h-11 shrink-0 flex-wrap items-center gap-x-ds-md gap-y-ds-xs border-b border-border bg-card px-ds-md py-ds-xs md:h-11 md:flex-nowrap md:py-0" data-oid="a2f4138c72" data-oid-component-root="true">
+      <div className="flex w-auto items-center gap-ds-sm md:w-[268px]" data-oid="1c35455b9f">
+        <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground" data-oid="cdfad74185">
+          <ArtLifeLogo className="h-[18px] w-[18px]" />
+        </span>
+        <div className="hidden min-w-0 flex-col md:flex" data-oid="a99936dc9a">
+          <h1 className="whitespace-nowrap text-heading font-bold leading-[1.1] tracking-[-0.02em] text-foreground" data-oid="13a9d052e2">
+            Art Life <span className="font-medium text-muted-foreground" data-oid="9509dd1f61">Creative Studio</span>
+          </h1>
+          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:05834ca73811|text">{desktop ? "DESKTOP" : isNativeApp ? "ANDROID" : isStandalone() ? "MOBILE APP" : "WEB"} v1.0.7</span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-ds-xs border-l border-border pl-ds-sm md:pl-ds-md" data-oid="04ea314637">
+        <button type="button" aria-label="New project" className={barBtn} onClick={() => studio.setNewDialogOpen(true)} data-oid="58a6bc99c3" data-oid-classname-dynamic="true">
+          <FilePlus2 className="h-3.5 w-3.5" data-oid="10c1d7820a" /> <span className="hidden md:inline" data-oid="40108add57">New</span>
+        </button>
+        <button type="button" aria-label="Open .dtm project" className={barBtn} onClick={studio.openFile} data-oid="854880934f" data-oid-classname-dynamic="true">
+          <FolderOpen className="h-3.5 w-3.5" data-oid="c62051a445" /> <span className="hidden md:inline" data-oid="fb580249b8">Open</span>
+        </button>
+        <input
+          ref={studio.fileInputRef}
+          type="file"
+          accept={isIOS ? undefined : ".dtm"}
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) studio.loadDTM(file);
+            e.target.value = "";
+          }} data-oid="fc3d75f830" />
+        <SaveExportMenu studio={studio} />
+        <button type="button" aria-label="Undo (Ctrl+Z)" className={barBtn} disabled={!studio.canUndo} onClick={studio.undo} data-oid="72597542c3" data-oid-classname-dynamic="true">
+          <Undo2 className="h-3.5 w-3.5" data-oid="a1e5fc13a5" />
+        </button>
+        <button type="button" aria-label="Redo (Ctrl+Shift+Z)" className={barBtn} disabled={!studio.canRedo} onClick={studio.redo} data-oid="af0434ccfd" data-oid-classname-dynamic="true">
+          <Redo2 className="h-3.5 w-3.5" data-oid="e36fe7fad9" />
+        </button>
+      </div>
+
+      <DocName studio={studio} />
+
+      <div className="order-last flex min-w-0 basis-full items-center overflow-x-auto whitespace-nowrap border-t border-border pt-ds-xs md:order-none md:flex-1 md:basis-auto md:overflow-visible md:border-t-0 md:border-l md:pl-ds-md md:pt-0" data-oid="b9de1a1872">
+        <ToolOptions studio={studio} />
+      </div>
+
+      <div className="ml-auto flex items-center gap-ds-xs md:ml-0" data-oid="20df5d0044">
+        <GuideButton />
+        <InstallApp />
+        <div className="flex items-center gap-[2px] border-r border-border pr-ds-xs" data-oid="856c878a14">
+          <button type="button" aria-label="Show grid (Ctrl+')" title="Show grid · Ctrl '" aria-pressed={studio.showGrid} onClick={() => studio.setShowGrid(!studio.showGrid)} className="inline-flex h-7 items-center rounded-md px-ds-sm text-muted-foreground hover:bg-secondary hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-accent" data-oid="50bf2b8a89">
+            <Grid3x3 className="h-3.5 w-3.5" data-oid="82985c9e50" />
+          </button>
+          <button type="button" aria-label="Snap to grid (Ctrl+Shift+')" title="Snap to grid · Ctrl ⇧ '" aria-pressed={studio.snapToGrid} onClick={() => studio.setSnapToGrid(!studio.snapToGrid)} className="inline-flex h-7 items-center rounded-md px-ds-sm text-muted-foreground hover:bg-secondary hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-accent" data-oid="8fd9845862">
+            <Magnet className="h-3.5 w-3.5" data-oid="72b137fb43" />
+          </button>
+          <button type="button" aria-label="Smart guides (Ctrl+U)" title="Smart guides · Ctrl U" aria-pressed={studio.smartGuides} onClick={() => studio.setSmartGuides(!studio.smartGuides)} className="inline-flex h-7 items-center rounded-md px-ds-sm text-muted-foreground hover:bg-secondary hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-accent" data-oid="619f4f8544">
+            <Crosshair className="h-3.5 w-3.5" data-oid="922ebd032c" />
+          </button>
+        </div>
+        <button type="button" aria-label="Zoom out" className={barBtn} onClick={() => studio.zoomBy(0.8)} data-oid="4fa5a48533" data-oid-classname-dynamic="true">
+          <Minus className="h-3.5 w-3.5" data-oid="f2cc8474c4" />
+        </button>
+        <output className="w-12 text-center type-caption text-foreground" data-oid="1bff655e18" data-oid-text-editable="false" data-oid-text-source="expression:1b6678dec838|text">{Math.round(studio.view.zoom * 100)}%</output>
+        <button type="button" aria-label="Zoom in" className={barBtn} onClick={() => studio.zoomBy(1.25)} data-oid="e4b7498cd4" data-oid-classname-dynamic="true">
+          <Plus className="h-3.5 w-3.5" data-oid="fa69b86c35" />
+        </button>
+        <button type="button" aria-label="Fit canvas to screen" className={barBtn} onClick={studio.requestFit} data-oid="a35cfe2b8b" data-oid-classname-dynamic="true">
+          <Maximize className="h-3.5 w-3.5" data-oid="814e355a4e" /> <span className="hidden md:inline" data-oid="5d87461fe6">Fit</span>
+        </button>
+        <button
+          type="button"
+          aria-label="Colours, brushes and layers"
+          aria-expanded={panelsOpen}
+          onClick={onTogglePanels}
+          className="inline-flex h-7 items-center rounded-md px-ds-sm text-muted-foreground hover:bg-secondary hover:text-foreground aria-expanded:bg-primary aria-expanded:text-primary-foreground md:hidden" data-oid="b93acd6135">
+          <PanelRight className="h-4 w-4" data-oid="0b7d6e22cb" />
+        </button>
+      </div>
+    </header>);
+
+}

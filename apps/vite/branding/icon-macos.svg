@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Art Life Creative Studio — macOS app icon (Big Sur+ grid: 824 px tile inside a 1024 canvas, with drop shadow). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Art Life Creative Studio</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF8A33"/>
+      <stop offset="1" stop-color="#F46A0C"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="8"/>
+  <g transform="translate(192 188) scale(1.25)" fill="none" stroke="#141416" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 84C298 160 338 236 348 316H164C174 236 214 160 256 84Z"/>
+    <path d="M256 84V206"/>
+    <circle cx="256" cy="238" r="24"/>
+    <path d="M178 316 150 424"/>
+    <path d="M334 316 362 424"/>
+  </g>
+</svg>

@@ -1,0 +1,26 @@
+{
+  "name": "art-life-creative-studio-android",
+  "productName": "Art Life Creative Studio",
+  "version": "1.0.7",
+  "androidVersionCode": 7,
+  "description": "Art Life Creative Studio — Android APK (Capacitor)",
+  "private": true,
+  "scripts": {
+    "build:web": "pnpm --dir ../../.. install && pnpm --dir .. run build",
+    "prepare:android": "node scripts/prepare-android.cjs",
+    "apk": "npm run build:web && npm run prepare:android && node scripts/build-apk.cjs",
+    "apk:quick": "npm run prepare:android && node scripts/build-apk.cjs",
+    "open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/cli": "^7.4.0",
+    "@capacitor/core": "^7.4.0",
+    "@capacitor/filesystem": "^7.1.0",
+    "@capacitor/share": "^7.0.0"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}

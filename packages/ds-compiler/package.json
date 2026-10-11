@@ -1,0 +1,10 @@
+{
+  "name": "@vibe/ds-compiler",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "test": "vitest run", "ds:compile": "tsx src/cli/compile-ds.ts", "ds:render": "tsx src/cli/render-ds.ts" },
+  "dependencies": { "yaml": "^2.5.0" },
+  "devDependencies": { "@types/node": "^20.16.0", "tailwindcss": "^4.1.0", "tsx": "^4.19.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }
+}

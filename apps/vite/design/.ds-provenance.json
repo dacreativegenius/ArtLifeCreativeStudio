@@ -1,0 +1,70 @@
+{
+  "sourceKind": "designmd",
+  "contrast": [
+    {
+      "pair": "base",
+      "ratio": 14.04,
+      "level": "AAA",
+      "advisory": false
+    },
+    {
+      "pair": "card",
+      "ratio": 12.29,
+      "level": "AAA",
+      "advisory": false
+    },
+    {
+      "pair": "popover",
+      "ratio": 12.29,
+      "level": "AAA",
+      "advisory": false
+    },
+    {
+      "pair": "primary",
+      "ratio": 7.07,
+      "level": "AAA",
+      "advisory": false
+    },
+    {
+      "pair": "secondary",
+      "ratio": 9.99,
+      "level": "AAA",
+      "advisory": false
+    },
+    {
+      "pair": "muted",
+      "ratio": 6.94,
+      "level": "AA",
+      "advisory": false
+    },
+    {
+      "pair": "accent",
+      "ratio": 5.56,
+      "level": "AA",
+      "advisory": false
+    },
+    {
+      "pair": "destructive",
+      "ratio": 5.28,
+      "level": "AA",
+      "advisory": false
+    },
+    {
+      "pair": "success",
+      "ratio": 7.86,
+      "level": "AAA",
+      "advisory": true
+    },
+    {
+      "pair": "warning",
+      "ratio": 10.03,
+      "level": "AAA",
+      "advisory": true
+    }
+  ],
+  "warnings": [],
+  "sourceHash": "08712d99875329eac34b889b635b5ccaea5e90030f5691b7428bd1a35b841548",
+  "documentHash": "5c8cfd4a61bd908bd8e5fcd2bfaca15992a4ba6f301d86e47f45490d767db541",
+  "compiledHash": "f634188e5b89c196b888debb11b18e0e36877e3ea795b7596b1342c9bda25dfc",
+  "fontLoadingHash": "67c17da1d0bfa6ce2b39b7797bac51a3b8c1e66375222afa21955bdbbb496bd2"
+}

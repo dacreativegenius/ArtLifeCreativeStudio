@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Art Life Creative Studio</title>
+  <rect width="512" height="512" fill="#FF7A1A"/>
+  <g transform="translate(102.4 102.4) scale(0.6)" fill="none" stroke="#141416" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 84C298 160 338 236 348 316H164C174 236 214 160 256 84Z"/>
+    <path d="M256 84V206"/>
+    <circle cx="256" cy="238" r="24"/>
+    <path d="M178 316 150 424"/>
+    <path d="M334 316 362 424"/>
+  </g>
+</svg>

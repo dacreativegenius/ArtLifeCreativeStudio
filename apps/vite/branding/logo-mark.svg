@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Art Life Creative Studio — the pen-nib "A" mark (transparent, uses currentColor). 512 × 512 artboard. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Art Life Creative Studio</title>
+  <g fill="none" stroke="currentColor" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <!-- nib body: pointed apex = top of the A, flat base = the A's crossbar -->
+    <path d="M256 84C298 160 338 236 348 316H164C174 236 214 160 256 84Z"/>
+    <!-- ink slit + breather hole -->
+    <path d="M256 84V206"/>
+    <circle cx="256" cy="238" r="24"/>
+    <!-- legs of the A -->
+    <path d="M178 316 150 424"/>
+    <path d="M334 316 362 424"/>
+  </g>
+</svg>

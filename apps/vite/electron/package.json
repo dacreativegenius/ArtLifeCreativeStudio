@@ -1,0 +1,87 @@
+{
+  "name": "art-life-creative-studio",
+  "productName": "Art Life Creative Studio",
+  "version": "1.0.7",
+  "description": "Art Life Creative Studio — pressure-sensitive pencil and vector drawing studio",
+  "author": "Art Life Creative Studio",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "icons": "node make-icons.cjs",
+    "build:web": "pnpm --dir ../../.. install && pnpm --dir .. run build",
+    "start": "npm run icons && npm run build:web && electron .",
+    "start:quick": "electron .",
+    "dev": "electron . --dev",
+    "dist": "npm run icons && npm run build:web && electron-builder",
+    "dist:mac": "npm run icons && npm run build:web && electron-builder --mac",
+    "dist:win": "npm run icons && npm run build:web && electron-builder --win nsis portable",
+    "dist:portable": "npm run icons && npm run build:web && electron-builder --win portable --x64",
+    "portable": "npm run dist:portable",
+    "dist:linux": "npm run icons && npm run build:web && electron-builder --linux"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.artlife.creativestudio",
+    "productName": "Art Life Creative Studio",
+    "copyright": "Copyright © 2026 Art Life Creative Studio",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "renderer"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "dtm",
+        "name": "Art Life Creative Studio Drawing",
+        "description": "Art Life Creative Studio project",
+        "role": "Editor"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": "dmg",
+      "icon": "build/icon-mac.png"
+    },
+    "dmg": {
+      "title": "Art Life Creative Studio"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "Art Life Creative Studio V${version} Portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Art Life Creative Studio",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "Art Life Creative Studio"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Graphics",
+      "icon": "build/icon.png"
+    }
+  }
+}

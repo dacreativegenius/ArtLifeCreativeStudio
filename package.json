@@ -1,0 +1,22 @@
+{
+  "name": "vibe-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "ds:compile": "pnpm --filter @vibe/ds-compiler ds:compile",
+    "add:three-r18": "pnpm --filter @vibe/app-vite run add:three-r18",
+    "add:p5": "pnpm --filter @vibe/app-vite run add:p5",
+    "mobile:dev": "pnpm --filter @vibe/app-mobile run dev",
+    "mobile:ios": "pnpm --filter @vibe/app-mobile run ios",
+    "mobile:android": "pnpm --filter @vibe/app-mobile run android"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.0",
+    "turbo": "^2.3.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

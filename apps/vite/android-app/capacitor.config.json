@@ -1,0 +1,12 @@
+{
+  "appId": "com.artlife.creativestudio",
+  "appName": "Art Life Creative Studio",
+  "webDir": "../dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#222226",
+    "adjustMarginsForEdgeToEdge": "force"
+  }
+}
