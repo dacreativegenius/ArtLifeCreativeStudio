@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Group, Link2, Scissors, Trash2, Ungroup } from "lucide-react";
 import { setDrawing } from "../../lib/art/activity";
 import { recognizeShape, snapLineAngle } from "../../lib/art/quickshape";
+import { IOS_CANVAS_BUDGET, IS_IOS, PressureFilter, bridgeGap, releaseCanvas, smoothPoints, type InputSample } from "../../lib/art/input";
+
+/** v1.0.6: once an Apple Pencil is seen on iPad, a single finger pans with these tools instead of drawing. */
+const FINGER_PAN_TOOLS = new Set(["brush", "eraser", "line", "rect", "ellipse"]);
 
 /** Hold-to-shape: keep the pen still this long at the end of a stroke to snap it to a clean shape. */
 const HOLD_MS = 2000;
@@ -210,6 +214,9 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const dirty = useRef(true);
   const colors = useRef({ accent: "#3d8bff", primary: "#ff7a1a" });
   const pressureState = useRef({ p: 0.5, lastT: 0, lastX: 0, lastY: 0 });
+  const penFilter = useRef(new PressureFilter());
+  const inputQueue = useRef<InputSample[]>([]);
+  const penSeen = useRef(false);
   const hoverAnchor = useRef<{id: string;idx: number;} | null>(null);
   const sampleReq = useRef<{sx: number;sy: number;} | null>(null);
   const hoverEdit = useRef<{id: string;add: XY | null;node: {sub: number;idx: number;} | null;} | null>(null);
@@ -293,6 +300,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   };
 
   const snapLive = () => {
+    flushInput();
     const it = live.current;
     if (drag.current?.type !== "draw" || !it || it.kind !== "stroke" || snapped.current) return;
     const res = recognizeShape(it.points, S.current.view.zoom);
@@ -459,6 +467,22 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const draw = () => {
     const c = canvasRef.current;
     if (!c) return;
+    // v1.0.6 point batching: queued pointer samples are folded into the live stroke once per frame
+    flushInput();
+    if (IS_IOS) {
+      // v1.0.6 canvas memory: iPad Safari caps total canvas memory, so the backing resolution
+      // steps down only when many visible layers would push past that limit
+      const sz = size.current;
+      const n = S.current.layers.filter((l) => l.visible).length + 4;
+      const want = Math.min(window.devicePixelRatio || 1, 2);
+      const fitD = Math.sqrt(IOS_CANVAS_BUDGET / Math.max(1, n * sz.w * sz.h * 4));
+      const dprB = Math.max(1, Math.min(want, Math.floor(fitD * 4) / 4));
+      if (sz.w > 0 && dprB !== sz.dpr) {
+        size.current = { ...sz, dpr: dprB };
+        c.width = Math.max(1, Math.round(sz.w * dprB));
+        c.height = Math.max(1, Math.round(sz.h * dprB));
+      }
+    }
     const ctx = c.getContext("2d")!;
     const { dpr } = size.current;
     const st = S.current;
@@ -518,7 +542,15 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
 
     // layers — committed artwork comes from each layer's cache; only the live stroke is redrawn per frame
     for (const layer of st.layers) {
-      if (!layer.visible) continue;
+      if (!layer.visible) {
+        // hidden layers give their bitmap back (zero-sized so iPad Safari frees it immediately)
+        const hc = layerCanvases.current.get(layer.id);
+        if (hc) {
+          releaseCanvas(hc.canvas);
+          layerCanvases.current.delete(layer.id);
+        }
+        continue;
+      }
       let cache = layerCanvases.current.get(layer.id);
       if (!cache) {
         cache = { canvas: document.createElement("canvas"), items: null, key: "" };
@@ -608,8 +640,13 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
     }
-    if (layerCanvases.current.size > st.layers.length + 4) {
-      for (const id of Array.from(layerCanvases.current.keys())) if (!st.layers.some((l) => l.id === id)) layerCanvases.current.delete(id);
+    if (layerCanvases.current.size > st.layers.length) {
+      for (const id of Array.from(layerCanvases.current.keys())) {
+        if (st.layers.some((l) => l.id === id)) continue;
+        const dc = layerCanvases.current.get(id);
+        if (dc) releaseCanvas(dc.canvas);
+        layerCanvases.current.delete(id);
+      }
     }
 
     // eyedropper: read the composited artwork before any overlay is drawn
@@ -1048,10 +1085,12 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   };
 
   /* ---------- pressure ---------- */
-  const pressureFor = (ev: PointerEvent, sx: number, sy: number) => {
+  const pressureFor = (ev: InputSample, sx: number, sy: number) => {
     const ps = pressureState.current;
-    if (ev.pointerType === "pen") return clamp(ev.pressure || 0.02, 0.02, 1);
-    if (ev.pointerType === "touch" && ev.pressure > 0 && ev.pressure !== 0.5) return clamp(ev.pressure, 0.02, 1);
+    // v1.0.6: stylus pressure is filtered (WebKit zero samples reuse the last value, light smoothing on iPad)
+    if (ev.pointerType === "pen") return penFilter.current.next(ev.pressure);
+    // iPad fingers report no usable force — they fall through to simulated / fixed pressure
+    if (ev.pointerType === "touch" && !IS_IOS && ev.pressure > 0 && ev.pressure !== 0.5) return clamp(ev.pressure, 0.02, 1);
     if (!S.current.simulatePressure) return 0.7;
     const dt = Math.max(1, ev.timeStamp - ps.lastT);
     const v = Math.hypot(sx - ps.lastX, sy - ps.lastY) / dt;
@@ -1063,7 +1102,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     return ps.p;
   };
 
-  const addPoint = (ev: PointerEvent) => {
+  const addPoint = (ev: InputSample) => {
     const it = live.current;
     if (!it || it.kind !== "stroke" && it.kind !== "erase") return;
     const { sx, sy, x, y } = locate(ev.clientX, ev.clientY);
@@ -1075,8 +1114,22 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const k = 1 - sb * 0.85;
     const nx = last.x + (x - last.x) * k;
     const ny = last.y + (y - last.y) * k;
-    if (Math.hypot(nx - last.x, ny - last.y) < 0.35 / S.current.view.zoom) return;
+    // vector brushes on iPad skip sub-pixel samples — fewer, cleaner points mean smoother ink edges
+    const minStep = it.kind === "stroke" && isVectorBrush(it.brush) && IS_IOS ? 1 : 0.35;
+    if (Math.hypot(nx - last.x, ny - last.y) < minStep / S.current.view.zoom) return;
+    if (it.kind === "stroke" && !isVectorBrush(it.brush)) {
+      // v1.0.6 interpolation: bridge dropped-frame gaps so pencil grain stays continuous
+      const prev = it.points[it.points.length - 2];
+      for (const q of bridgeGap(prev, last, { x: nx, y: ny, p }, 6 / S.current.view.zoom)) it.points.push(q);
+    }
     it.points.push({ x: nx, y: ny, p });
+  };
+
+  const flushInput = () => {
+    const q = inputQueue.current;
+    if (!q.length) return;
+    inputQueue.current = [];
+    for (const s of q) addPoint(s);
   };
 
   /** Ids of the element an item belongs to: a pencil stroke selects its whole layer's sketch. */
@@ -1449,6 +1502,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     drag.current = null;
     setPanning(false);
     predicted.current = [];
+    inputQueue.current = [];
     const m = gestureMetrics();
     gesture.current = { m0x: m.mx, m0y: m.my, d0: m.d, a0: m.ang, v0: { ...S.current.view } };
     dirty.current = true;
@@ -1482,6 +1536,16 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       touches.current.set(e.pointerId, { x: sx, y: sy });
       if (touches.current.size === 2) return startGesture();
       if (touches.current.size > 2 || gesture.current) return;
+    }
+
+    if (e.pointerType === "pen" && IS_IOS && !penSeen.current) {
+      penSeen.current = true;
+      st.flash("Apple Pencil detected · Pencil draws, fingers pan & pinch");
+    }
+    if (e.pointerType === "touch" && penSeen.current && FINGER_PAN_TOOLS.has(st.tool)) {
+      drag.current = { type: "pan", sx, sy, vx: st.view.x, vy: st.view.y };
+      setPanning(true);
+      return;
     }
 
     const zoom = st.view.zoom;
@@ -1537,6 +1601,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           if (!layerId) return;
           liveLayer.current = layerId;
           Object.assign(pressureState.current, { p: 0.3, lastT: e.timeStamp, lastX: sx, lastY: sy });
+          penFilter.current.reset();
+          inputQueue.current = [];
           const p = pressureFor(e.nativeEvent, sx, sy);
           const b = st.currentBrush;
           live.current = {
@@ -1560,6 +1626,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           const layerId = target(null);
           if (!layerId) return;
           liveLayer.current = layerId;
+          inputQueue.current = [];
           live.current = { id: uid("e"), kind: "erase", size: st.eraserSize, points: [{ x, y, p: 1 }] };
           snapped.current = null;
           setDrawing(true);
@@ -1833,14 +1900,15 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
             }
             const ha = holdAt.current;
             if (ha && Math.hypot(sx - ha.sx, sy - ha.sy) > HOLD_SLOP) armHold(sx, sy);
+            // v1.0.6 point batching: queue every coalesced sample; draw() folds them in once per frame
             const evs = e.nativeEvent.getCoalescedEvents?.() ?? [];
-            if (evs.length) evs.forEach(addPoint);else
-            addPoint(e.nativeEvent);
+            const srcEvs = evs.length ? evs : [e.nativeEvent];
+            for (const ev of srcEvs) inputQueue.current.push({ clientX: ev.clientX, clientY: ev.clientY, pressure: ev.pressure, pointerType: ev.pointerType, timeStamp: ev.timeStamp });
             const it = live.current;
             if (it && it.kind === "stroke") p = it.points[it.points.length - 1].p;
             // browser-predicted pen positions (Chrome / Android WebView) — drawn but never committed
             const pev = e.nativeEvent.getPredictedEvents?.() ?? [];
-            const lastPt = it && (it.kind === "stroke" || it.kind === "erase") ? it.points[it.points.length - 1] : null;
+            const lastPt = it && (it.kind === "stroke" || it.kind === "erase") ? { x, y, p: it.points[it.points.length - 1].p } : null;
             predicted.current = [];
             if (lastPt) {
               for (const ev of pev.slice(-2)) {
@@ -2150,6 +2218,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    flushInput();
     if (e.pointerType === "touch") {
       touches.current.delete(e.pointerId);
       if (gesture.current) {
@@ -2196,7 +2265,10 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         const lp = it.points[it.points.length - 1];
         if (rl && Math.hypot(rl.x - lp.x, rl.y - lp.y) > 0.2 / st.view.zoom) it.points.push({ x: rl.x, y: rl.y, p: lp.p });
         it.points = simplifyKeepCorners(it.points, 1.2, 7 / st.view.zoom);
-      } else if (it.kind === "stroke" && isVectorBrush(it.brush)) it.points = simplify(it.points, 0.9);
+      } else if (it.kind === "stroke" && isVectorBrush(it.brush)) {
+        // v1.0.6: on iPad the Pencil's high-rate jitter is smoothed first and the fit tolerance follows zoom
+        it.points = IS_IOS ? simplify(smoothPoints(it.points, 2), clamp(1.1 / st.view.zoom, 0.6, 2.5)) : simplify(it.points, 0.9);
+      }
       if (it.kind === "shape") {
         const b = itemBounds(it);
         if (b.w - it.size < 2 && b.h - it.size < 2) return;

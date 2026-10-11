@@ -15,6 +15,11 @@ import {
   type SubPath,
   uid,
 } from "./types"
+import { IS_IOS } from "./input"
+
+/** v1.0.6: iPad pencil grain is stamped denser (and never thinner than 3 grains) so strokes read solid, not dotted. */
+const STAMP_SPACING = IS_IOS ? 0.34 : 0.45
+const GRAIN_MIN = IS_IOS ? 3 : 2
 
 export type XY = { x: number; y: number }
 
@@ -152,7 +157,7 @@ export function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem, range?:
     const rad = Math.max(0.4, w / 2)
     if (d < from || d >= to) return rad
     const rnd = mulberry32(s.seed + id * 7919)
-    const grains = Math.max(2, Math.round(rad * (pressure ? 1.8 : 2.2)))
+    const grains = Math.max(GRAIN_MIN, Math.round(rad * (pressure ? 1.8 : 2.2)))
     for (let g = 0; g < grains; g++) {
       const ang = rnd() * Math.PI * 2
       // Tech Pencil: tight scatter — grains hug the centre line, smaller and more even
@@ -164,7 +169,7 @@ export function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem, range?:
     return rad
   }
   let rad = stamp(pts[0].x, pts[0].y, pts[0].p, 0)
-  let next = Math.max(0.45, rad * 0.45)
+  let next = Math.max(0.45, rad * STAMP_SPACING)
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1]
     const b = pts[i]
@@ -174,7 +179,7 @@ export function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem, range?:
     while (next <= lens[i]) {
       const f = (next - l0) / seg
       rad = stamp(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.p + (b.p - a.p) * f, next)
-      next += Math.max(0.45, rad * 0.45)
+      next += Math.max(0.45, rad * STAMP_SPACING)
     }
   }
   // Tech Pencil: a crisp graphite core under the grain keeps the line sharp
@@ -194,6 +199,48 @@ export function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem, range?:
 
 /* ---------------- Vector ---------------- */
 
+/** v1.0.6: soften sample-to-sample width flicker (Apple Pencil pressure noise → ragged ink edges). */
+function smoothWidths(w: number[]): number[] {
+  if (w.length < 5) return w
+  const out = w.slice()
+  for (let i = 2; i < w.length - 2; i++) out[i] = (w[i - 2] + 2 * w[i - 1] + 3 * w[i] + 2 * w[i + 1] + w[i + 2]) / 9
+  return out
+}
+
+/**
+ * Outline frame of a variable-width stroke. v1.0.6: the edge normal comes from a window of the path
+ * (about the local brush radius) instead of the two nearest samples — dense, jittery iPad Pencil input
+ * used to swing those normals wildly, which is what made Pressure Ink edges look jagged and fractured.
+ */
+function strokeFrame(pts: Pt[], lens: number[], widths: number[]) {
+  const n = pts.length
+  const left: XY[] = []
+  const right: XY[] = []
+  const angles: number[] = []
+  for (let i = 0; i < n; i++) {
+    const r = Math.max(1.2, widths[i] * 0.7)
+    let j = i
+    let k = i
+    let guard = 0
+    while (j > 0 && lens[i] - lens[j] < r && guard++ < 48) j--
+    guard = 0
+    while (k < n - 1 && lens[k] - lens[i] < r && guard++ < 48) k++
+    if (j === k) {
+      j = Math.max(0, i - 1)
+      k = Math.min(n - 1, i + 1)
+    }
+    const dx = pts[k].x - pts[j].x
+    const dy = pts[k].y - pts[j].y
+    const l = Math.hypot(dx, dy) || 1
+    const nx = -dy / l
+    const ny = dx / l
+    angles.push(Math.atan2(dy, dx))
+    left.push({ x: pts[i].x + nx * widths[i], y: pts[i].y + ny * widths[i] })
+    right.push({ x: pts[i].x - nx * widths[i], y: pts[i].y - ny * widths[i] })
+  }
+  return { left, right, angles }
+}
+
 /** Outline geometry of a pressure vector stroke (shared by canvas + SVG export). */
 export function pressureGeometry(s: StrokeItem) {
   const pts = catmull(s.points)
@@ -204,20 +251,8 @@ export function pressureGeometry(s: StrokeItem) {
     return { dot: { x: pts[0].x, y: pts[0].y, r: Math.max(0.5, (s.size * (0.1 + 0.9 * pts[0].p)) / 2) }, left: [] as XY[], right: [] as XY[], pts, widths: [] as number[] }
   }
   const tLen = Math.min(total * 0.25, s.size * 3)
-  const widths = pts.map((p, i) => (s.size * (0.1 + 0.9 * p.p) * Math.max(0.06, taperAt(lens[i], total, tLen))) / 2)
-  const left: XY[] = []
-  const right: XY[] = []
-  for (let i = 0; i < n; i++) {
-    const a = pts[Math.max(0, i - 1)]
-    const b = pts[Math.min(n - 1, i + 1)]
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    const l = Math.hypot(dx, dy) || 1
-    const nx = -dy / l
-    const ny = dx / l
-    left.push({ x: pts[i].x + nx * widths[i], y: pts[i].y + ny * widths[i] })
-    right.push({ x: pts[i].x - nx * widths[i], y: pts[i].y - ny * widths[i] })
-  }
+  const widths = smoothWidths(pts.map((p, i) => (s.size * (0.1 + 0.9 * p.p) * Math.max(0.06, taperAt(lens[i], total, tLen))) / 2))
+  const { left, right } = strokeFrame(pts, lens, widths)
   return { dot: null, left, right, pts, widths }
 }
 
@@ -235,22 +270,8 @@ function drawVectorPressure(ctx: CanvasRenderingContext2D, s: StrokeItem) {
     return
   }
   const tLen = Math.min(total * 0.25, s.size * 3)
-  const widths = pts.map((p, i) => (s.size * (0.1 + 0.9 * p.p) * Math.max(0.06, taperAt(lens[i], total, tLen))) / 2)
-  const left: XY[] = []
-  const right: XY[] = []
-  const angles: number[] = []
-  for (let i = 0; i < n; i++) {
-    const a = pts[Math.max(0, i - 1)]
-    const b = pts[Math.min(n - 1, i + 1)]
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    const l = Math.hypot(dx, dy) || 1
-    const nx = -dy / l
-    const ny = dx / l
-    angles.push(Math.atan2(dy, dx))
-    left.push({ x: pts[i].x + nx * widths[i], y: pts[i].y + ny * widths[i] })
-    right.push({ x: pts[i].x - nx * widths[i], y: pts[i].y - ny * widths[i] })
-  }
+  const widths = smoothWidths(pts.map((p, i) => (s.size * (0.1 + 0.9 * p.p) * Math.max(0.06, taperAt(lens[i], total, tLen))) / 2))
+  const { left, right, angles } = strokeFrame(pts, lens, widths)
   ctx.beginPath()
   ctx.moveTo(left[0].x, left[0].y)
   for (let i = 1; i < n; i++) ctx.lineTo(left[i].x, left[i].y)
