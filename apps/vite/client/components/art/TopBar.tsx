@@ -230,7 +230,7 @@ export function TopBar({ studio, panelsOpen = false, onTogglePanels }: {studio: 
           <h1 className="whitespace-nowrap text-heading font-bold leading-[1.1] tracking-[-0.02em] text-foreground" data-oid="13a9d052e2">
             Art Life <span className="font-medium text-muted-foreground" data-oid="9509dd1f61">Creative Studio</span>
           </h1>
-          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:05834ca73811|text">{desktop ? "DESKTOP" : isNativeApp ? "ANDROID" : isStandalone() ? "MOBILE APP" : "WEB"} v1.0.6</span>
+          <span className="type-caption leading-[1.2] text-muted-foreground" data-oid="484fbb7b69" data-oid-text-editable="false" data-oid-text-source="expression:05834ca73811|text">{desktop ? "DESKTOP" : isNativeApp ? "ANDROID" : isStandalone() ? "MOBILE APP" : "WEB"} v1.0.7</span>
         </div>
       </div>
 

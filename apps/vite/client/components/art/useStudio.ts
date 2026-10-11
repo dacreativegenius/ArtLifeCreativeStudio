@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { BRUSHES, DOC_H, DOC_W, layerTypeFor, setDocSize, uid, type BrushId, type BrushSettings, type Item, type Layer, type LayerType, type ToolId } from "../../lib/art/types"
-import { isVectorBrush, renderDoc, rotateItem, scaleItem, translateItem, unionBounds } from "../../lib/art/render"
+import { BRUSHES, DOC_H, DOC_W, effLayers, isInside, layerTypeFor, normalizeLayers, setDocSize, uid, type BrushId, type BrushSettings, type Item, type Layer, type LayerType, type ToolId } from "../../lib/art/types"
+import { drawItem, isVectorBrush, renderDoc, rotateItem, scaleItem, translateItem, unionBounds } from "../../lib/art/render"
 import { isPathfinderable, outlineItem, pathfinder, type PathfinderOp } from "../../lib/art/pathfinder"
 import type { Rect } from "../../lib/art/types"
 
@@ -89,6 +89,8 @@ export function useStudio() {
   const [secondary, setSecondary] = useState("#ff7a1a")
   const [swatches, setSwatches] = useState<string[]>(DEFAULT_SWATCHES)
   const [selection, setSelection] = useState<string[]>([])
+  /** v1.0.7 touch multi-select: when on, every tap / marquee / lasso adds to (or toggles) the selection. */
+  const [multiSelect, setMultiSelect] = useState(false)
   const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1, rot: 0 })
   const [fitNonce, setFitNonce] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
@@ -148,7 +150,7 @@ export function useStudio() {
   const commit = useCallback(
     (fn: (prev: Layer[]) => Layer[]) => {
       snapshot()
-      setLayers(fn)
+      setLayers((prev) => normalizeLayers(fn(prev)))
     },
     [snapshot],
   )
@@ -218,7 +220,9 @@ export function useStudio() {
   const deleteLayer = (id: string) => {
     if (layers.length <= 1) return flash("A drawing needs at least one layer")
     const idx = layers.findIndex((l) => l.id === id)
-    const remaining = layers.filter((l) => l.id !== id)
+    const gone = layers[idx]
+    // sublayers of a deleted layer move up one level instead of disappearing with it
+    const remaining = layers.filter((l) => l.id !== id).map((l) => (l.parent === id ? { ...l, parent: gone?.parent } : l))
     commit(() => remaining)
     setActiveLayerId(remaining[Math.max(0, idx - 1)].id)
     setSelection([])
@@ -237,15 +241,124 @@ export function useStudio() {
     setActiveLayerId(copy.id)
   }
 
+  /** Move up / down among the layers at the same nesting level (sublayers travel with their parent). */
   const moveLayer = (id: string, dir: 1 | -1) => {
+    const src = layers.find((l) => l.id === id)
+    if (!src) return
+    const sibs = layers.filter((l) => l.parent === src.parent)
+    const t = sibs[sibs.indexOf(src) + dir]
+    if (!t) return
+    moveLayerTo(id, t.id, dir === 1 ? "above" : "below")
+  }
+
+  /** v1.0.7: put layer `id` inside `parentId` as its top sublayer. */
+  const nestLayer = (id: string, parentId: string) => {
+    const prev = layersRef.current
+    const src = prev.find((l) => l.id === id)
+    const par = prev.find((l) => l.id === parentId)
+    if (!src || !par) return
+    if (isInside(prev, parentId, id)) return flash("A layer can't go inside itself")
+    const next = prev.filter((l) => l.id !== id)
+    next.splice(next.findIndex((l) => l.id === parentId), 0, { ...src, parent: parentId })
+    commit(() => next)
+    setActiveLayerId(id)
+    flash(`“${src.name}” is now inside “${par.name}”`)
+  }
+
+  /** Nest into the layer just above it in the panel (stacking order on the canvas doesn't change). */
+  const indentLayer = (id: string) => {
+    const src = layers.find((l) => l.id === id)
+    if (!src) return
+    const sibs = layers.filter((l) => l.parent === src.parent)
+    const host = sibs[sibs.indexOf(src) + 1]
+    if (!host) return flash("No layer above to nest into")
+    commit((prev) => prev.map((l) => (l.id === id ? { ...l, parent: host.id } : l)))
+    flash(`“${src.name}” is now inside “${host.name}”`)
+  }
+
+  /** Move a sublayer out one level. */
+  const outdentLayer = (id: string) => {
+    const src = layers.find((l) => l.id === id)
+    if (!src?.parent) return
+    const par = layers.find((l) => l.id === src.parent)
+    commit((prev) => prev.map((l) => (l.id === id ? { ...l, parent: par?.parent } : l)))
+    flash(`“${src.name}” moved out of “${par?.name ?? "group"}”`)
+  }
+
+  /** The pencil layer directly beneath `id` (what Merge Down would merge into), if any. */
+  const mergeTarget = (id: string) => {
     const idx = layers.findIndex((l) => l.id === id)
-    const to = idx + dir
-    if (idx < 0 || to < 0 || to >= layers.length) return
-    commit((prev) => {
-      const next = [...prev]
-      ;[next[idx], next[to]] = [next[to], next[idx]]
-      return next
-    })
+    const src = layers[idx]
+    const below = layers[idx - 1]
+    return src && src.type === "pencil" && below && below.type === "pencil" ? below : null
+  }
+
+  /**
+   * v1.0.7 Merge Down: a pencil layer joins the pencil layer below it. Strokes are moved across as-is;
+   * if the layer has eraser marks or its own opacity / blend, it is flattened first so it looks the same.
+   */
+  const mergeDown = (id: string) => {
+    const ls = layersRef.current
+    const idx = ls.findIndex((l) => l.id === id)
+    const src = ls[idx]
+    const below = ls[idx - 1]
+    if (!src) return
+    if (src.type !== "pencil") return flash("Merge Down works on pencil layers")
+    if (!below || below.type !== "pencil") return flash("The layer below isn't a pencil layer")
+    const eff = effLayers(ls)
+    if (eff[idx].locked || eff[idx - 1].locked) return flash("Unlock both layers to merge them")
+    let moved: Item[] = src.items.filter((i) => !i.hidden)
+    const flatten = moved.some((i) => i.kind === "erase") || src.opacity !== 1 || (src.blend ?? "normal") !== "normal" || !src.visible
+    if (!src.visible) moved = []
+    else if (flatten && moved.length) {
+      const RES = DOC_W * DOC_H <= 2.5e6 ? 2 : 1
+      const tmp = document.createElement("canvas")
+      tmp.width = DOC_W * RES
+      tmp.height = DOC_H * RES
+      const t = tmp.getContext("2d")!
+      t.setTransform(RES, 0, 0, RES, 0, 0)
+      for (const it of moved) drawItem(t, it)
+      const cv = document.createElement("canvas")
+      cv.width = tmp.width
+      cv.height = tmp.height
+      const g = cv.getContext("2d")!
+      g.globalAlpha = src.opacity
+      g.drawImage(tmp, 0, 0)
+      tmp.width = 0
+      tmp.height = 0
+      moved = [{ id: uid("img"), kind: "image", x: 0, y: 0, w: DOC_W, h: DOC_H, canvas: cv }]
+    }
+    commit((prev) =>
+      prev
+        .filter((l) => l.id !== id)
+        .map((l) => {
+          let n = l
+          if (n.parent === id) n = { ...n, parent: src.parent }
+          if (n.id === below.id) n = { ...n, items: [...n.items, ...moved] }
+          return n
+        }),
+    )
+    setActiveLayerId(below.id)
+    setSelection([])
+    flash(`Merged “${src.name}” into “${below.name}”`)
+  }
+
+  /** v1.0.7: select everything on a layer (then Cut or Delete empties it but keeps the layer). */
+  const selectLayerContents = (id: string) => {
+    const l = layersRef.current.find((x) => x.id === id)
+    if (!l) return
+    setActiveLayerId(id)
+    const e = effLayers(layersRef.current).find((x) => x.id === id)
+    if (e?.locked) return flash(`“${l.name}” is locked`)
+    if (e && !e.visible) return flash(`“${l.name}” is hidden`)
+    const ids = l.items.filter((i) => i.kind !== "erase" && !i.hidden).map((i) => i.id)
+    if (!ids.length) {
+      setSelection([])
+      return flash(`“${l.name}” is empty`)
+    }
+    setSelection(ids)
+    if (!["select", "direct", "move", "transform"].includes(tool)) setTool("select")
+    flash(`Selected all ${ids.length} on “${l.name}” · Cut or Delete keeps the layer`)
   }
 
   /** Drag-reorder: drop layer `id` above or below layer `targetId` (above = higher in the stack). */
@@ -254,10 +367,13 @@ export function useStudio() {
     const prev = layersRef.current
     const src = prev.find((l) => l.id === id)
     if (!src) return
+    if (isInside(prev, targetId, id)) return
     const next = prev.filter((l) => l.id !== id)
     const ti = next.findIndex((l) => l.id === targetId)
     if (ti < 0) return
-    next.splice(place === "above" ? ti + 1 : ti, 0, src)
+    // dropping next to a layer puts it at that layer's nesting level
+    const tParent = next[ti].parent
+    next.splice(place === "above" ? ti + 1 : ti, 0, src.parent === tParent ? src : { ...src, parent: tParent })
     if (next.every((l, i) => l === prev[i])) return
     commit(() => next)
     setActiveLayerId(id)
@@ -926,6 +1042,14 @@ export function useStudio() {
     duplicateLayer,
     moveLayer,
     moveLayerTo,
+    nestLayer,
+    indentLayer,
+    outdentLayer,
+    mergeDown,
+    mergeTarget,
+    selectLayerContents,
+    multiSelect,
+    setMultiSelect,
     moveItemTo,
     updateLayer,
     clearLayer,

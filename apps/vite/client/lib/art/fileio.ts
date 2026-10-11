@@ -1,4 +1,5 @@
 import type { BlendMode, Item, Layer, LayerType, PathItem, ShapeItem, StrokeItem } from "./types"
+import { effLayers, normalizeLayers } from "./types"
 import { catmullBeziers, drawItem, ellipseSegments, itemBounds, pressureGeometry } from "./render"
 import { desktop } from "./desktop"
 import { isNativeApp, saveNative } from "./native"
@@ -177,7 +178,7 @@ export function buildSVG(layers: Layer[], W: number, H: number) {
   const defs: string[] = []
   let maskN = 0
   const groups: string[] = []
-  for (const l of layers) {
+  for (const l of effLayers(layers)) {
     if (!l.visible) continue
     let content = ""
     for (const it of l.items) {
@@ -304,7 +305,7 @@ export async function parseDTM(text: string) {
   }
   if (!raw || raw.format !== DTM_FORMAT || !Array.isArray(raw.layers)) throw new Error("Not an Art Life Creative Studio .dtm file")
   if (raw.version > DTM_VERSION) throw new Error("This .dtm was saved by a newer Art Life Creative Studio")
-  const layers: Layer[] = await Promise.all(
+  const loaded: Layer[] = await Promise.all(
     raw.layers.map(async (l) => ({
       id: String(l.id),
       name: String(l.name ?? "Layer"),
@@ -313,6 +314,7 @@ export async function parseDTM(text: string) {
       opacity: typeof l.opacity === "number" ? l.opacity : 1,
       blend: BLENDS.includes(l.blend as BlendMode) ? l.blend : "normal",
       type: inferType(l),
+      ...(l.parent ? { parent: String(l.parent) } : {}),
       items: await Promise.all(
         (l.items ?? []).map(async (it): Promise<Item> => {
           if (it.kind === "image") {
@@ -324,6 +326,7 @@ export async function parseDTM(text: string) {
       ),
     })),
   )
+  const layers = normalizeLayers(loaded)
   if (!layers.length) throw new Error("File has no layers")
   return {
     name: raw.name || "Untitled",

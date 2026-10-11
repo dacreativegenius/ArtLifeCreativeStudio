@@ -2,6 +2,7 @@ import {
   DOC_H,
   DOC_W,
   blendOp,
+  effLayers,
   type BrushId,
   type EraseItem,
   type Item,
@@ -821,7 +822,7 @@ export function renderDoc(layers: Layer[], scale = 1, paper = true) {
   tmp.width = c.width
   tmp.height = c.height
   const t = tmp.getContext("2d")!
-  for (const l of layers) {
+  for (const l of effLayers(layers)) {
     if (!l.visible) continue
     t.setTransform(1, 0, 0, 1, 0, 0)
     t.clearRect(0, 0, tmp.width, tmp.height)

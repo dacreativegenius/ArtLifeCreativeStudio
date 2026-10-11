@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Brush, ChevronDown, ChevronRight, ChevronUp, Circle, Copy, Eraser, Eye, EyeOff, GripVertical, Image as ImageIcon, Lock, PaintBucket, PenTool, Pencil, Slash, Square, Trash2, Unlock } from "lucide-react";
+import { Brush, ChevronDown, ChevronRight, ChevronUp, Circle, Copy, Eraser, Eye, EyeOff, Folder, FolderOpen, GripVertical, Image as ImageIcon, IndentDecrease, IndentIncrease, Lock, Merge, MousePointer2, PaintBucket, PenTool, Pencil, Slash, Square, Trash2, Unlock } from "lucide-react";
 import type { Studio } from "./useStudio";
 import { Panel, iconBtn } from "./Panel";
 import { NumInput } from "./NumInput";
@@ -7,7 +7,7 @@ import type { Item, Layer } from "../../lib/art/types";
 import { BRUSHES } from "../../lib/art/types";
 import { DOC_W } from "../../lib/art/types";
 import { drawItem } from "../../lib/art/render";
-import { DOC_H } from "../../lib/art/types";
+import { DOC_H, layerDepth } from "../../lib/art/types";
 import { afterDrawing } from "../../lib/art/activity";
 
 /**
@@ -92,7 +92,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
   const [editing, setEditing] = useState<string | null>(null);
 
   /* ---------- drag handles: reorder layers, and paths / shapes within or between layers ---------- */
-  type Drop = {key: string;place: "above" | "below";};
+  type Drop = {key: string;place: "above" | "below" | "inside";};
   const [drop, setDropState] = useState<Drop | null>(null);
   const dropRef = useRef<Drop | null>(null);
   const dragRef = useRef<{kind: "layer" | "item";id: string;} | null>(null);
@@ -117,7 +117,13 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
     const key = el?.dataset.dropKey;
     if (!el || !key || d.kind === "layer" && !key.startsWith("L:")) return setDrop(null);
     const r = el.getBoundingClientRect();
-    setDrop({ key, place: e.clientY < r.top + r.height / 2 ? "above" : "below" });
+    const f = (e.clientY - r.top) / Math.max(1, r.height);
+    // v1.0.7: dragging a layer onto the middle of another layer nests it inside that layer
+    if (d.kind === "layer" && key.startsWith("L:") && key.slice(2) !== d.id) {
+      setDrop({ key, place: f < 0.28 ? "above" : f > 0.72 ? "below" : "inside" });
+      return;
+    }
+    setDrop({ key, place: f < 0.5 ? "above" : "below" });
   };
   const endDrag = () => {
     const d = dragRef.current;
@@ -128,18 +134,43 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
     if (!d || !t) return;
     if (t.key.startsWith("L:")) {
       const layerId = t.key.slice(2);
-      if (d.kind === "layer") studio.moveLayerTo(d.id, layerId, t.place);else
+      if (d.kind === "layer") {
+        if (t.place === "inside") studio.nestLayer(d.id, layerId);else
+        studio.moveLayerTo(d.id, layerId, t.place);
+      } else
       studio.moveItemTo(d.id, layerId, null, "above");
     } else {
       const [, layerId, itemId] = t.key.split("|");
-      studio.moveItemTo(d.id, layerId, itemId, t.place);
+      studio.moveItemTo(d.id, layerId, itemId, t.place === "below" ? "below" : "above");
     }
   };
   const dropAt = (key: string) => drop?.key === key ? drop.place : undefined;
 
   const active = studio.activeLayer;
-  const ordered = [...studio.layers].reverse();
-  const activeIndex = studio.layers.findIndex((l) => l.id === active?.id);
+  // v1.0.7 nested layers: the flat stack reversed is already the tree (parent row, then its sublayers)
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const toggleCollapsed = (id: string) =>
+  setCollapsed((s) => {
+    const n = new Set(s);
+    if (n.has(id)) n.delete(id);else
+    n.add(id);
+    return n;
+  });
+  const childCount = new Map<string, number>();
+  for (const l of studio.layers) if (l.parent) childCount.set(l.parent, (childCount.get(l.parent) ?? 0) + 1);
+  const hiddenByCollapse = (l: Layer) => {
+    let p = l.parent;
+    let guard = 0;
+    while (p && guard++ < 64) {
+      if (collapsed.has(p)) return true;
+      p = studio.layers.find((x) => x.id === p)?.parent;
+    }
+    return false;
+  };
+  const ordered = [...studio.layers].reverse().filter((l) => !hiddenByCollapse(l));
+  const siblings = active ? studio.layers.filter((l) => l.parent === active.parent) : [];
+  const activeIndex = active ? siblings.findIndex((l) => l.id === active.id) : -1;
+  const mergeInto = active ? studio.mergeTarget(active.id) : null;
 
   return (
     <Panel
@@ -155,7 +186,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
           <button type="button" aria-label="Duplicate layer" className={iconBtn} onClick={() => active && studio.duplicateLayer(active.id)} data-oid="593de826ad" data-oid-classname-dynamic="true">
             <Copy className="h-3.5 w-3.5" data-oid="13e32bff74" />
           </button>
-          <button type="button" aria-label="Move layer up" className={iconBtn} disabled={activeIndex >= studio.layers.length - 1} onClick={() => active && studio.moveLayer(active.id, 1)} data-oid="244468e319" data-oid-classname-dynamic="true">
+          <button type="button" aria-label="Move layer up" className={iconBtn} disabled={activeIndex >= siblings.length - 1} onClick={() => active && studio.moveLayer(active.id, 1)} data-oid="244468e319" data-oid-classname-dynamic="true">
             <ChevronUp className="h-3.5 w-3.5" data-oid="3c7dc04db4" />
           </button>
           <button type="button" aria-label="Move layer down" className={iconBtn} disabled={activeIndex <= 0} onClick={() => active && studio.moveLayer(active.id, -1)} data-oid="c00f092846" data-oid-classname-dynamic="true">
@@ -218,6 +249,46 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
         </div>
       }
 
+      {active &&
+      <div role="group" aria-label="Layer actions" className="mb-ds-sm grid grid-cols-4 gap-[2px] rounded-md border border-border bg-background p-[2px]" data-oid="f4f65346aa">
+          <button
+          type="button"
+          title="Put this layer inside the layer above it"
+          disabled={activeIndex >= siblings.length - 1}
+          onClick={() => studio.indentLayer(active.id)}
+          className="flex h-9 flex-col items-center justify-center gap-[1px] rounded-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35" data-oid="2ef90395ee">
+            <IndentIncrease className="h-3.5 w-3.5" data-oid="d5fc80c198" />
+            <span className="type-caption" data-oid="268d36380d">Nest</span>
+          </button>
+          <button
+          type="button"
+          title="Move this layer out of its parent layer"
+          disabled={!active.parent}
+          onClick={() => studio.outdentLayer(active.id)}
+          className="flex h-9 flex-col items-center justify-center gap-[1px] rounded-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35" data-oid="3548280d78">
+            <IndentDecrease className="h-3.5 w-3.5" data-oid="ad0e840e3a" />
+            <span className="type-caption" data-oid="030733fead">Unnest</span>
+          </button>
+          <button
+          type="button"
+          title={mergeInto ? `Merge into “${mergeInto.name}”` : "Merge Down needs a pencil layer directly below"}
+          disabled={!mergeInto}
+          onClick={() => studio.mergeDown(active.id)}
+          className="flex h-9 flex-col items-center justify-center gap-[1px] rounded-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35" data-oid="af33bab726">
+            <Merge className="h-3.5 w-3.5 rotate-180" data-oid="f57fdae589" />
+            <span className="type-caption" data-oid="23b4d5f2de">Merge ↓</span>
+          </button>
+          <button
+          type="button"
+          title="Select everything on this layer — then Cut or Delete keeps the layer"
+          onClick={() => studio.selectLayerContents(active.id)}
+          className="flex h-9 flex-col items-center justify-center gap-[1px] rounded-sm text-label text-muted-foreground hover:bg-secondary hover:text-foreground" data-oid="d83cb89c15">
+            <MousePointer2 className="h-3.5 w-3.5" data-oid="947c1ef8c6" />
+            <span className="type-caption" data-oid="6f92402eaf">Select all</span>
+          </button>
+        </div>
+      }
+
       <ul role="listbox" aria-label="Layers" className="flex flex-col gap-[3px] rounded-md border border-border bg-background p-ds-xs" data-oid="0a9070211d">
         {ordered.map((layer, index) =>
         <Fragment key={layer.id}>
@@ -229,7 +300,8 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
             data-drop={dropAt(`L:${layer.id}`)}
             data-dragging={draggingId === layer.id}
             onClick={() => studio.setActiveLayerId(layer.id)}
-            className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50 data-[dragging=true]:opacity-40 data-[drop=above]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=below]:shadow-[inset_0_-2px_0_0_var(--primary)]" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-text-editable="false">
+            style={{ marginLeft: layerDepth(studio.layers, layer) * 14 }}
+            className="flex cursor-pointer items-center gap-ds-xs rounded-sm border border-transparent px-ds-xs py-ds-xs hover:bg-secondary aria-selected:border-accent aria-selected:bg-secondary data-[hidden=true]:opacity-50 data-[dragging=true]:opacity-40 data-[drop=above]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=below]:shadow-[inset_0_-2px_0_0_var(--primary)] data-[drop=inside]:border-primary data-[drop=inside]:bg-primary/15" data-oid="dc0fbf6c91" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="element:button|expression:64e6e506d3c6|expression:365984e73157|element:button|element:button|element:div|element:button" data-oid-style-dynamic="marginLeft">
           
             <button
               type="button"
@@ -259,6 +331,20 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
 
             <span aria-hidden="true" className="-mr-ds-xs w-4 shrink-0" data-oid="b338148a6d" data-oid-shared="true" />
             }
+            {childCount.has(layer.id) &&
+            <button
+              type="button"
+              aria-label={collapsed.has(layer.id) ? `Show sublayers of ${layer.name}` : `Hide sublayers of ${layer.name}`}
+              aria-expanded={!collapsed.has(layer.id)}
+              title={collapsed.has(layer.id) ? "Show sublayers" : "Hide sublayers"}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCollapsed(layer.id);
+              }}
+              className="grid h-6 w-5 shrink-0 place-items-center rounded-sm text-primary hover:bg-card" data-oid="b38b36f056" data-oid-shared="true">
+                {collapsed.has(layer.id) ? <Folder className="h-3.5 w-3.5" data-oid="8cddbdbed7" data-oid-shared="true" /> : <FolderOpen className="h-3.5 w-3.5" data-oid="0a6b0064b5" data-oid-shared="true" />}
+              </button>
+            }
             <button
               type="button"
               aria-label={layer.visible ? `Hide ${layer.name}` : `Show ${layer.name}`}
@@ -270,7 +356,17 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
             
               {layer.visible ? <Eye className="h-3.5 w-3.5" data-oid="72364899a2" data-oid-shared="true" /> : <EyeOff className="h-3.5 w-3.5" data-oid="4beee333ef" data-oid-shared="true" />}
             </button>
-            <LayerThumb layer={layer} />
+            <button
+              type="button"
+              aria-label={`Select everything on ${layer.name}`}
+              title="Tap to select everything on this layer"
+              onClick={(e) => {
+                e.stopPropagation();
+                studio.selectLayerContents(layer.id);
+              }}
+              className="shrink-0 rounded-sm hover:ring-1 hover:ring-accent" data-oid="1a340e54d5" data-oid-shared="true">
+              <LayerThumb layer={layer} />
+            </button>
             <div className="min-w-0 flex-1" data-index={index} data-oid="9701a3e47e" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="expression:cf11757b6ec2|element:p">
               {editing === layer.id ?
               <input
@@ -293,8 +389,8 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
                   {layer.name}
                 </p>
               }
-              <p className="type-caption text-muted-foreground" data-oid="58f576afbc" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="expression:5332937ed06d|text|expression:5b9c7a56383a|text|expression:4900173db67f|text|expression:f3269a005485">
-                {layer.type === "pencil" ? "PENCIL" : "VECTOR"} · {layer.items.length} OBJ · {Math.round(layer.opacity * 100)}%{layer.blend === "multiply" ? " · MULT" : layer.blend === "screen" ? " · SCRN" : ""}
+              <p className="type-caption text-muted-foreground" data-oid="58f576afbc" data-oid-shared="true" data-oid-text-editable="false" data-oid-text-source="expression:5332937ed06d|text|expression:5b9c7a56383a|text|expression:b5c88ed02142|text|expression:4900173db67f|text|expression:f3269a005485">
+                {layer.type === "pencil" ? "PENCIL" : "VECTOR"} · {layer.items.length} OBJ{childCount.has(layer.id) ? ` · ${childCount.get(layer.id)} SUB` : ""} · {Math.round(layer.opacity * 100)}%{layer.blend === "multiply" ? " · MULT" : layer.blend === "screen" ? " · SCRN" : ""}
               </p>
             </div>
             <button
@@ -326,7 +422,7 @@ export function LayersPanel({ studio }: {studio: Studio;}) {
                 data-drop-key={`I|${layer.id}|${it.id}`}
                 data-drop={dropAt(`I|${layer.id}|${it.id}`)}
                 data-dragging={draggingId === it.id}
-                onClick={(e) => !it.hidden && selectItem(layer.id, it.id, e.shiftKey)}
+                onClick={(e) => !it.hidden && selectItem(layer.id, it.id, e.shiftKey || studio.multiSelect)}
                 className="flex cursor-pointer items-center gap-ds-xs rounded-sm px-ds-xs py-[3px] text-label text-muted-foreground hover:bg-secondary hover:text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground data-[hidden=true]:opacity-50 data-[dragging=true]:opacity-40 data-[drop=above]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=below]:shadow-[inset_0_-2px_0_0_var(--primary)]" data-oid="83534bb0e9" data-oid-shared="true" data-oid-text-editable="false">
                       <button
                   type="button"

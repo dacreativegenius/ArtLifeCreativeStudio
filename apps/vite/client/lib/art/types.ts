@@ -141,6 +141,96 @@ export interface Layer {
   blend?: BlendMode
   type: LayerType
   items: Item[]
+  /** v1.0.7 nested layers: id of the layer this one sits inside (undefined = top level). */
+  parent?: string
+}
+
+/**
+ * v1.0.7 nested layers. Layers stay one flat array (bottom → top render order); a nested layer and
+ * all its descendants always sit directly beneath their parent, so the parent's own artwork draws
+ * above its sublayers and the panel tree matches what you see on the canvas.
+ */
+export function normalizeLayers(ls: Layer[]): Layer[] {
+  const byId = new Map(ls.map((l) => [l.id, l]))
+  const fixed = ls.map((l) => {
+    if (!l.parent) return l
+    let p: string | undefined = l.parent
+    let bad = !byId.has(p)
+    let guard = 0
+    while (!bad && p) {
+      if (p === l.id || guard++ > 64) bad = true
+      else p = byId.get(p)?.parent
+    }
+    return bad ? { ...l, parent: undefined } : l
+  })
+  const kids = new Map<string, Layer[]>()
+  const roots: Layer[] = []
+  for (const l of fixed) {
+    if (!l.parent) roots.push(l)
+    else {
+      const list = kids.get(l.parent) ?? []
+      list.push(l)
+      kids.set(l.parent, list)
+    }
+  }
+  const out: Layer[] = []
+  const emit = (l: Layer) => {
+    for (const c of kids.get(l.id) ?? []) emit(c)
+    out.push(l)
+  }
+  for (const r of roots) emit(r)
+  return out.length === ls.length && out.every((l, i) => l === ls[i]) ? ls : out
+}
+
+/** Nesting depth (0 = top level). */
+export function layerDepth(ls: Layer[], l: Layer): number {
+  let d = 0
+  let p = l.parent
+  while (p && d < 64) {
+    d++
+    p = ls.find((x) => x.id === p)?.parent
+  }
+  return d
+}
+
+/** True when `id` is `ancestorId` or sits somewhere inside it. */
+export function isInside(ls: Layer[], id: string, ancestorId: string): boolean {
+  let cur: string | undefined = id
+  let guard = 0
+  while (cur && guard++ < 64) {
+    if (cur === ancestorId) return true
+    cur = ls.find((x) => x.id === cur)?.parent
+  }
+  return false
+}
+
+const effCache = new WeakMap<Layer[], Layer[]>()
+/**
+ * Layers as they actually render: a hidden / locked parent hides / locks everything inside it, and
+ * opacities multiply down the tree. Item arrays keep their identity, so layer caches stay valid.
+ */
+export function effLayers(ls: Layer[]): Layer[] {
+  if (!ls.some((l) => l.parent)) return ls
+  const hit = effCache.get(ls)
+  if (hit) return hit
+  const byId = new Map(ls.map((l) => [l.id, l]))
+  const out = ls.map((l) => {
+    if (!l.parent) return l
+    let visible = l.visible
+    let locked = l.locked
+    let opacity = l.opacity
+    let p = byId.get(l.parent)
+    let guard = 0
+    while (p && guard++ < 64) {
+      visible = visible && p.visible
+      locked = locked || p.locked
+      opacity *= p.opacity
+      p = p.parent ? byId.get(p.parent) : undefined
+    }
+    return visible === l.visible && locked === l.locked && opacity === l.opacity ? l : { ...l, visible, locked, opacity }
+  })
+  effCache.set(ls, out)
+  return out
 }
 
 export interface BrushSettings {

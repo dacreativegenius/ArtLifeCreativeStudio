@@ -3,6 +3,8 @@ import {
   ClipboardPaste,
   Scissors,
   Circle,
+  CopyPlus,
+  Layers,
   Eraser,
   Hand,
   Lasso,
@@ -86,6 +88,36 @@ export function Toolbar({ studio }: {studio: Studio;}) {
       )}
 
       <div className="grid w-full grid-cols-2 justify-items-center gap-ds-xs border-t border-border pt-ds-sm" data-oid="c69fd07d9b">
+        <div className="group relative" data-oid="9d5ff1b1d1">
+          <button
+            type="button"
+            aria-label="Multi-select · every tap adds to the selection"
+            aria-pressed={studio.multiSelect}
+            onClick={() => {
+              const on = !studio.multiSelect;
+              studio.setMultiSelect(on);
+              if (on && !["select", "direct", "move", "transform", "lasso"].includes(studio.tool)) studio.setTool("select");
+              studio.flash(on ? "Multi-select on · tap objects to add or remove them" : "Multi-select off");
+            }}
+            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground" data-oid="8013cfeb16">
+            <CopyPlus className="h-[18px] w-[18px]" strokeWidth={1.75} data-oid="744a427f90" />
+          </button>
+          <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="8538e18540">
+            Multi-select <kbd className="ml-ds-xs type-caption text-primary" data-oid="d42179e927">Shift</kbd>
+          </span>
+        </div>
+        <div className="group relative" data-oid="a8393b53f2">
+          <button
+            type="button"
+            aria-label="Select everything on the active layer"
+            onClick={() => studio.activeLayer && studio.selectLayerContents(studio.activeLayer.id)}
+            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-accent" data-oid="51ab39cfe9">
+            <Layers className="h-[18px] w-[18px]" strokeWidth={1.75} data-oid="9aea1d62af" />
+          </button>
+          <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="bcdd11a641">
+            Select all on layer <kbd className="ml-ds-xs type-caption text-primary" data-oid="97646aa9d9">Ctrl A</kbd>
+          </span>
+        </div>
         <div className="group relative" data-oid="69f1799c29">
           <button
             type="button"
@@ -108,7 +140,7 @@ export function Toolbar({ studio }: {studio: Studio;}) {
             className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground disabled:opacity-35" data-oid="e8b4f7a490">
             <Trash2 className="h-[18px] w-[18px]" strokeWidth={1.75} data-oid="eb306bdacf" />
           </button>
-          <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="51ab39cfe9">
+          <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="dfc0207aef">
             Delete selection <kbd className="ml-ds-xs type-caption text-primary" data-oid="76362c3f03">Del</kbd>
           </span>
         </div>
@@ -118,7 +150,7 @@ export function Toolbar({ studio }: {studio: Studio;}) {
             aria-label="Cut selection (Ctrl+X)"
             disabled={!studio.selection.length}
             onClick={studio.cutSelection}
-            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary disabled:opacity-35" data-oid="bcdd11a641">
+            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary disabled:opacity-35" data-oid="3c83ec2570">
             <Scissors className="h-[18px] w-[18px]" strokeWidth={1.75} data-oid="b97eaccded" />
           </button>
           <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-ds-sm hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-ds-sm py-ds-xs text-label text-popover-foreground shadow-lg group-hover:block" data-oid="a2316d26b3">

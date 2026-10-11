@@ -8,7 +8,7 @@ import { IOS_CANVAS_BUDGET, IS_IOS, PressureFilter, bridgeGap, releaseCanvas, sm
 const FINGER_PAN_TOOLS = new Set(["brush", "eraser", "line", "rect", "ellipse"]);
 
 /** Hold-to-shape: keep the pen still this long at the end of a stroke to snap it to a clean shape. */
-const HOLD_MS = 2000;
+const HOLD_MS = 1000;
 /** Pen / finger wobble (screen px) that still counts as holding still. */
 const HOLD_SLOP = 6;
 import { outlineItem } from "../../lib/art/pathfinder";
@@ -18,6 +18,7 @@ import {
   DOC_W,
   blendOp,
   cornerNode,
+  effLayers,
   uid,
   type Item,
   type Layer,
@@ -85,7 +86,7 @@ type Drag =
 {type: "shape";x0: number;y0: number;} |
 {type: "marquee";x0: number;y0: number;x1: number;y1: number;additive: boolean;base: string[];} |
 {type: "lasso";pts: XY[];additive: boolean;base: string[];} |
-{type: "move";lx: number;ly: number;ids: Set<string>;moved: boolean;x0?: number;y0?: number;tx?: number;ty?: number;box?: Rect | null;xs?: number[];ys?: number[];} |
+{type: "move";lx: number;ly: number;ids: Set<string>;moved: boolean;untap?: string[];x0?: number;y0?: number;tx?: number;ty?: number;box?: Rect | null;xs?: number[];ys?: number[];} |
 {type: "scale";ax: number;ay: number;hx: number;hy: number;orig: Map<string, Item>;moved: boolean;} |
 {type: "anchor";id: string;idx: number;orig: Item;moved: boolean;} |
 {type: "handle";id: string;sub: number;idx: number;which: "in" | "out";orig: PathItem;moved: boolean;free?: boolean;} |
@@ -181,7 +182,12 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const S = useRef(studio);
-  S.current = studio;
+  // v1.0.7 nested layers: drawing, hit-testing and rendering see each layer's effective
+  // visibility / lock / opacity (a hidden or locked parent hides or locks what's inside it)
+  {
+    const eff = effLayers(studio.layers);
+    S.current = eff === studio.layers ? studio : { ...studio, layers: eff, activeLayer: eff.find((l) => l.id === studio.activeLayer?.id) ?? studio.activeLayer };
+  }
   const layerCanvases = useRef(new Map<string, LayerCache>());
   const scratch = useRef<HTMLCanvasElement | null>(null);
   const paperCache = useRef<{canvas: HTMLCanvasElement;key: string;} | null>(null);
@@ -1583,6 +1589,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     let tool = st.tool;
     if (e.altKey && (tool === "brush" || tool === "fill")) tool = "eyedropper";
     const tol = 5 / zoom;
+    // v1.0.7: the Multi-select toggle works like holding Shift (for touch + stylus without a keyboard)
+    const multi = e.shiftKey || st.multiSelect;
     const tryHandles = () => {
       if (!st.selection.length) return false;
       const rb = rotHit(sx, sy);
@@ -1604,8 +1612,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       return false;
     };
     const startMarquee = () => {
-      if (!e.shiftKey) st.setSelection([]);
-      drag.current = { type: "marquee", x0: x, y0: y, x1: x, y1: y, additive: e.shiftKey, base: e.shiftKey ? st.selection : [] };
+      if (!multi) st.setSelection([]);
+      drag.current = { type: "marquee", x0: x, y0: y, x1: x, y1: y, additive: multi, base: multi ? st.selection : [] };
     };
     const pickOrMarquee = () => {
       const hit = hitTop(st.layers, x, y, tol);
@@ -1613,11 +1621,16 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         let sel = st.selection;
         const id = hit.item.id;
         const g = groupOf(id, hit.layerId);
-        if (e.shiftKey) sel = sel.includes(id) ? sel.filter((i) => !g.includes(i)) : Array.from(new Set([...sel, ...g]));else
-        if (!sel.includes(id)) sel = g;
+        // multi-select: tapping an unselected object adds it; tapping a selected one (without dragging)
+        // removes it on release, so the whole selection can still be dragged from any of its objects
+        let untap: string[] | undefined;
+        if (multi) {
+          if (sel.includes(id)) untap = g;else
+          sel = Array.from(new Set([...sel, ...g]));
+        } else if (!sel.includes(id)) sel = g;
         st.setSelection(sel);
         st.setActiveLayerId(hit.layerId);
-        if (sel.includes(id)) drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false };
+        if (sel.includes(id)) drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false, untap };
       } else startMarquee();
     };
 
@@ -1827,8 +1840,8 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
         zoomAt(sx, sy, e.altKey ? 0.8 : 1.25);
         break;
       case "lasso":
-        if (!e.shiftKey) st.setSelection([]);
-        drag.current = { type: "lasso", pts: [{ x, y }], additive: e.shiftKey, base: e.shiftKey ? st.selection : [] };
+        if (!multi) st.setSelection([]);
+        drag.current = { type: "lasso", pts: [{ x, y }], additive: multi, base: multi ? st.selection : [] };
         break;
       case "move":{
           if (tryHandles()) break;
@@ -1845,7 +1858,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
       case "transform":{
           if (tryHandles()) break;
           const u = unionBounds(selectedItems());
-          if (u && !e.shiftKey && x >= u.x && x <= u.x + u.w && y >= u.y && y <= u.y + u.h) {
+          if (u && !e.shiftKey && !(st.multiSelect && hitTop(st.layers, x, y, tol)) && x >= u.x && x <= u.x + u.w && y >= u.y && y <= u.y + u.h) {
             drag.current = { type: "move", lx: x, ly: y, ids: new Set(st.selection), moved: false };
             break;
           }
@@ -1886,7 +1899,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
           if (hit) {
             const id = hit.item.id;
             const g = groupOf(id, hit.layerId);
-            const sel = e.shiftKey ? Array.from(new Set([...st.selection, ...g])) : g;
+            const sel = multi ? Array.from(new Set([...st.selection, ...g])) : g;
             st.setSelection(sel);
             st.setActiveLayerId(hit.layerId);
             drag.current = { type: "move", lx: x, ly: y, ids: new Set(sel), moved: false };
@@ -2265,6 +2278,11 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     const st = S.current;
     dirty.current = true;
     if (!d) return;
+    if (d.type === "move" && !d.moved && d.untap) {
+      const off = new Set(d.untap);
+      st.setSelection(st.selection.filter((i) => !off.has(i)));
+      return;
+    }
     if (d.type === "pen") {
       if (pen.current?.closing) commitPen();else
       if (d.mode === "out" && !d.moved && !d.hadOut && penNodes().length >= 2) commitPen();
