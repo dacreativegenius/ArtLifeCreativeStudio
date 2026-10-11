@@ -225,6 +225,32 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
   const [panning, setPanning] = useState(false);
   const [readout, setReadout] = useState({ x: 0, y: 0, p: 0 });
 
+  // v1.0.7 iPad: Safari's Scribble / long-press magnifier / scroll detection can swallow or delay
+  // Apple Pencil samples (even with touch-action: none), which left gaps in pencil strokes.
+  // Cancelling the native touch events keeps every Pencil sample flowing to the pointer handlers.
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c || !IS_IOS) return;
+    c.style.setProperty("-webkit-touch-callout", "none");
+    c.style.setProperty("-webkit-user-select", "none");
+    const stop = (ev: Event) => {
+      if (ev.cancelable) ev.preventDefault();
+    };
+    const opts: AddEventListenerOptions = { passive: false };
+    c.addEventListener("touchstart", stop, opts);
+    c.addEventListener("touchmove", stop, opts);
+    c.addEventListener("touchend", stop, opts);
+    c.addEventListener("contextmenu", stop);
+    c.addEventListener("selectstart", stop);
+    return () => {
+      c.removeEventListener("touchstart", stop);
+      c.removeEventListener("touchmove", stop);
+      c.removeEventListener("touchend", stop);
+      c.removeEventListener("contextmenu", stop);
+      c.removeEventListener("selectstart", stop);
+    };
+  }, []);
+
   dirty.current = true;
 
   /* ---------- view transform: screen = (x, y) + R(rot) · zoom · doc ---------- */
@@ -1120,7 +1146,7 @@ export function CanvasStage({ studio }: {studio: Studio;}) {
     if (it.kind === "stroke" && !isVectorBrush(it.brush)) {
       // v1.0.6 interpolation: bridge dropped-frame gaps so pencil grain stays continuous
       const prev = it.points[it.points.length - 2];
-      for (const q of bridgeGap(prev, last, { x: nx, y: ny, p }, 6 / S.current.view.zoom)) it.points.push(q);
+      for (const q of bridgeGap(prev, last, { x: nx, y: ny, p }, (IS_IOS ? 3 : 6) / S.current.view.zoom)) it.points.push(q);
     }
     it.points.push({ x: nx, y: ny, p });
   };

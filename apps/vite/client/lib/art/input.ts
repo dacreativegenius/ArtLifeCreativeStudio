@@ -40,7 +40,7 @@ export class PressureFilter {
   next(raw: number): number {
     let p = raw > 0 ? raw : this.has ? this.last : 0.35
     if (IS_IOS) p = Math.pow(p, 0.72)
-    p = clamp(p, IS_IOS ? 0.06 : 0.02, 1)
+    p = clamp(p, IS_IOS ? 0.14 : 0.02, 1)
     if (!this.has) {
       this.has = true
       this.last = p

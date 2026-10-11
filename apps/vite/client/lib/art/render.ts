@@ -18,8 +18,11 @@ import {
 import { IS_IOS } from "./input"
 
 /** v1.0.6: iPad pencil grain is stamped denser (and never thinner than 3 grains) so strokes read solid, not dotted. */
-const STAMP_SPACING = IS_IOS ? 0.34 : 0.45
-const GRAIN_MIN = IS_IOS ? 3 : 2
+const STAMP_SPACING = IS_IOS ? 0.3 : 0.45
+const GRAIN_MIN = IS_IOS ? 4 : 2
+/** v1.0.7: iPad grain count multiplier + alpha floor, so light Apple Pencil pressure never fades into dots. */
+const GRAIN_MULT = IS_IOS ? 2.4 : 1.8
+const GRAIN_ALPHA_MIN = IS_IOS ? 0.5 : 0.3
 
 export type XY = { x: number; y: number }
 
@@ -157,13 +160,20 @@ export function drawPencil(ctx: CanvasRenderingContext2D, s: StrokeItem, range?:
     const rad = Math.max(0.4, w / 2)
     if (d < from || d >= to) return rad
     const rnd = mulberry32(s.seed + id * 7919)
-    const grains = Math.max(GRAIN_MIN, Math.round(rad * (pressure ? 1.8 : 2.2)))
+    // v1.0.7 iPad: a soft graphite core under every stamp — the stamps overlap, so the core forms a
+    // continuous line and grain can never leave visible gaps, whatever Safari does with the samples
+    if (IS_IOS && pressure) {
+      const cs = Math.max(0.9, rad * 0.75)
+      ctx.globalAlpha = Math.min(1, a * 0.22)
+      ctx.fillRect(x - cs / 2, y - cs / 2, cs, cs)
+    }
+    const grains = Math.max(GRAIN_MIN, Math.round(rad * (pressure ? GRAIN_MULT : 2.2)))
     for (let g = 0; g < grains; g++) {
       const ang = rnd() * Math.PI * 2
       // Tech Pencil: tight scatter — grains hug the centre line, smaller and more even
       const dist = pressure ? Math.sqrt(rnd()) * rad : rnd() * rad * 0.7
       const gs = pressure ? 0.55 + rnd() * Math.max(0.5, rad * 0.35) : 0.45 + rnd() * Math.max(0.3, rad * 0.18)
-      ctx.globalAlpha = Math.min(1, a * (pressure ? 0.3 + rnd() * 0.7 : 0.6 + rnd() * 0.4))
+      ctx.globalAlpha = Math.min(1, a * (pressure ? GRAIN_ALPHA_MIN + rnd() * (1 - GRAIN_ALPHA_MIN) : 0.6 + rnd() * 0.4))
       ctx.fillRect(x + Math.cos(ang) * dist - gs / 2, y + Math.sin(ang) * dist - gs / 2, gs, gs)
     }
     return rad
